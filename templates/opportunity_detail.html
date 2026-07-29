@@ -1,0 +1,78 @@
+{% extends "base.html" %}
+{% block title %}{{ opportunity.title }} · OpportunityEngine{% endblock %}
+{% block content %}
+{% if duplicate %}
+<div class="alert alert-info">
+  This listing matches an existing opportunity. The existing record is shown;
+  no duplicate was created.
+</div>
+{% endif %}
+
+<div class="d-flex justify-content-between align-items-start mb-4">
+  <div>
+    <h1 class="h2 mb-1">{{ opportunity.title }}</h1>
+    <p class="text-secondary mb-0">
+      {{ opportunity.organization_name or "Organization not supplied" }}
+    </p>
+  </div>
+  {% if opportunity.lifecycle_status == "eligible" %}
+    <span class="badge text-bg-success fs-6">Eligible</span>
+  {% elif opportunity.lifecycle_status == "ineligible" %}
+    <span class="badge text-bg-danger fs-6">Ineligible</span>
+  {% else %}
+    <span class="badge text-bg-warning fs-6">Manual review</span>
+  {% endif %}
+</div>
+
+<div class="row g-4">
+  <div class="col-lg-7">
+    <section class="bg-white border rounded p-4 mb-4">
+      <h2 class="h4">Listing</h2>
+      <dl class="row mb-0">
+        <dt class="col-sm-4">Work location</dt>
+        <dd class="col-sm-8">{{ opportunity.remote_status|title }}</dd>
+        <dt class="col-sm-4">Engagement</dt>
+        <dd class="col-sm-8">
+          {{ opportunity.engagement_type|replace("_", " ")|title }}
+        </dd>
+        <dt class="col-sm-4">Tax type</dt>
+        <dd class="col-sm-8">{{ opportunity.tax_type|upper }}</dd>
+        <dt class="col-sm-4">Location</dt>
+        <dd class="col-sm-8">{{ opportunity.location_text or "Not supplied" }}</dd>
+        <dt class="col-sm-4">Schedule</dt>
+        <dd class="col-sm-8">{{ opportunity.schedule_text or "Not supplied" }}</dd>
+      </dl>
+      {% if opportunity.canonical_url %}
+      <a href="{{ opportunity.canonical_url }}" target="_blank"
+         rel="noopener noreferrer">Open original listing</a>
+      {% endif %}
+    </section>
+    <section class="bg-white border rounded p-4">
+      <h2 class="h4">Description</h2>
+      <p class="mb-0" style="white-space: pre-wrap">{{ opportunity.description }}</p>
+    </section>
+  </div>
+  <div class="col-lg-5">
+    <section class="bg-white border rounded p-4">
+      <h2 class="h4">Constitutional filters</h2>
+      {% for filter in opportunity.filters %}
+      <div class="border-top py-3">
+        <div class="d-flex justify-content-between gap-3">
+          <strong>{{ filter.rule_code|replace("_", " ")|title }}</strong>
+          {% if filter.outcome == "pass" %}
+            <span class="badge text-bg-success">Pass</span>
+          {% elif filter.outcome == "fail" %}
+            <span class="badge text-bg-danger">Fail</span>
+          {% else %}
+            <span class="badge text-bg-warning">Review</span>
+          {% endif %}
+        </div>
+        <p class="small mb-1">{{ filter.explanation }}</p>
+        <div class="small text-secondary">Evidence: {{ filter.evidence }}</div>
+      </div>
+      {% endfor %}
+    </section>
+  </div>
+</div>
+{% endblock %}
+
