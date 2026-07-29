@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+{% block title %}Review Inbox · OpportunityEngine{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <div>
+    <h1 class="h2 mb-1">Review inbox</h1>
+    <p class="text-secondary mb-0">Human-controlled opportunity evaluation.</p>
+  </div>
+</div>
+
+{% if opportunities %}
+<div class="table-responsive bg-white border rounded">
+  <table class="table table-hover align-middle mb-0">
+    <thead>
+      <tr>
+        <th>Opportunity</th>
+        <th>Work type</th>
+        <th>Remote</th>
+        <th>Status</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+    {% for opportunity in opportunities %}
+      <tr>
+        <td>
+          <strong>{{ opportunity.title }}</strong><br>
+          <span class="text-secondary">
+            {{ opportunity.organization_name or "Organization not supplied" }}
+          </span>
+        </td>
+        <td>
+          {{ opportunity.engagement_type|replace("_", " ")|title }}
+          {% if opportunity.tax_type != "unknown" %}
+            · {{ opportunity.tax_type|upper }}
+          {% endif %}
+        </td>
+        <td>{{ opportunity.remote_status|title }}</td>
+        <td>
+          {% if opportunity.lifecycle_status == "eligible" %}
+            <span class="badge text-bg-success">Eligible</span>
+          {% elif opportunity.lifecycle_status == "ineligible" %}
+            <span class="badge text-bg-danger">Ineligible</span>
+          {% else %}
+            <span class="badge text-bg-warning">Manual review</span>
+          {% endif %}
+        </td>
+        <td class="text-end">
+          <a class="btn btn-sm btn-outline-primary"
+             href="/opportunities/{{ opportunity.id }}">Review</a>
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<div class="p-5 text-center bg-white border rounded">
+  <h2 class="h4">No opportunities yet</h2>
+  <p class="text-secondary">Add the first listing to test the complete workflow.</p>
+  <a class="btn btn-primary" href="/opportunities/new">Add opportunity</a>
+</div>
+{% endif %}
+{% endblock %}
+
