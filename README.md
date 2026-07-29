@@ -131,4 +131,46 @@ pyproject.toml
 
 ## Status
 
-🚧 Project Initialization
+🚧 **v0.1 development**
+
+Working today:
+
+- Localhost-only FastAPI application
+- SQLite initialization and constitutional safeguards
+- Manual opportunity entry
+- Deterministic deduplication and hard-filter evaluation
+- Review inbox and detailed filter explanations
+- Automated test suite and GitHub Actions CI
+
+Not implemented yet:
+
+- Automated opportunity collection
+- AI scoring
+- Résumé or cover-letter generation
+- Applications, email, or any external action
+
+---
+
+## Run locally
+
+Python 3.11 or newer is required.
+
+```bash
+python -m venv .venv
+source .venv/bin/activate
+python -m pip install -r requirements.txt
+cp .env.example .env
+uvicorn backend.app:app --host 127.0.0.1 --port 8000
+```
+
+Open `http://127.0.0.1:8000` in a browser.
+
+Run the tests with:
+
+```bash
+pytest
+```
+
+The v0.1 configuration rejects non-loopback bind addresses. OpportunityEngine
+must not be exposed to a LAN or the public internet until authentication and
+deployment controls are explicitly designed and approved.
