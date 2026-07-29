@@ -7,6 +7,7 @@ from typing import AsyncIterator
 from fastapi import FastAPI
 
 from backend.api.health import router as health_router
+from backend.api.opportunities import router as opportunities_router
 from backend.config import Settings, get_settings
 from backend.database import Database
 from backend.logging_config import configure_logging
@@ -43,8 +44,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     )
     application.state.settings = resolved_settings
     application.include_router(health_router)
+    application.include_router(opportunities_router)
     return application
 
 
 app = create_app()
-
