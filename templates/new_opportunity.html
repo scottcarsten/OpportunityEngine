@@ -1,0 +1,108 @@
+{% extends "base.html" %}
+{% block title %}Add Opportunity · OpportunityEngine{% endblock %}
+{% block content %}
+<h1 class="h2">Add opportunity</h1>
+<p class="text-secondary">
+  Paste the listing details. Unknown requirements are sent to manual review rather
+  than silently accepted.
+</p>
+
+<form method="post" action="/opportunities" class="bg-white border rounded p-4">
+  <div class="row g-3">
+    <div class="col-md-8">
+      <label class="form-label" for="title">Title</label>
+      <input class="form-control" id="title" name="title" required>
+    </div>
+    <div class="col-md-4">
+      <label class="form-label" for="organization_name">Organization</label>
+      <input class="form-control" id="organization_name" name="organization_name">
+    </div>
+    <div class="col-12">
+      <label class="form-label" for="description">Description</label>
+      <textarea class="form-control" id="description" name="description"
+                rows="10" required></textarea>
+    </div>
+    <div class="col-md-8">
+      <label class="form-label" for="source_url">Source URL</label>
+      <input class="form-control" id="source_url" name="source_url" type="url">
+    </div>
+    <div class="col-md-4">
+      <label class="form-label" for="location_text">Location</label>
+      <input class="form-control" id="location_text" name="location_text">
+    </div>
+    <div class="col-md-4">
+      <label class="form-label" for="remote_status">Work location</label>
+      <select class="form-select" id="remote_status" name="remote_status">
+        <option value="remote">Remote</option>
+        <option value="hybrid">Hybrid</option>
+        <option value="onsite">Onsite</option>
+        <option value="unknown" selected>Unknown</option>
+      </select>
+    </div>
+    <div class="col-md-4">
+      <label class="form-label" for="engagement_type">Engagement</label>
+      <select class="form-select" id="engagement_type" name="engagement_type">
+        <option value="contract">Contract</option>
+        <option value="consulting">Consulting</option>
+        <option value="project">Project</option>
+        <option value="part_time">Part time</option>
+        <option value="full_time">Full time</option>
+        <option value="temporary">Temporary</option>
+        <option value="unknown" selected>Unknown</option>
+      </select>
+    </div>
+    <div class="col-md-4">
+      <label class="form-label" for="tax_type">Tax type</label>
+      <select class="form-select" id="tax_type" name="tax_type">
+        <option value="1099">1099</option>
+        <option value="w2">W-2</option>
+        <option value="corp_to_corp">Corp-to-corp</option>
+        <option value="unknown" selected>Unknown</option>
+      </select>
+    </div>
+    <div class="col-md-6">
+      <label class="form-label" for="schedule_text">Schedule</label>
+      <input class="form-control" id="schedule_text" name="schedule_text">
+    </div>
+    <div class="col-md-2">
+      <label class="form-label" for="compensation_min">Minimum</label>
+      <input class="form-control" id="compensation_min" name="compensation_min"
+             type="number" min="0" step="0.01">
+    </div>
+    <div class="col-md-2">
+      <label class="form-label" for="compensation_max">Maximum</label>
+      <input class="form-control" id="compensation_max" name="compensation_max"
+             type="number" min="0" step="0.01">
+    </div>
+    <div class="col-md-2">
+      <label class="form-label" for="compensation_period">Period</label>
+      <select class="form-select" id="compensation_period"
+              name="compensation_period">
+        {% for value in ["hour", "day", "week", "month", "year", "fixed", "unknown"] %}
+        <option value="{{ value }}">{{ value|title }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    {% for name, label in [
+      ("requires_travel", "Travel required?"),
+      ("requires_relocation", "Relocation required?"),
+      ("requires_clearance", "Existing clearance required?"),
+      ("replaces_full_time_work", "Would replace full-time employment?")
+    ] %}
+    <div class="col-md-6">
+      <label class="form-label" for="{{ name }}">{{ label }}</label>
+      <select class="form-select" id="{{ name }}" name="{{ name }}">
+        <option value="unknown" selected>Unknown</option>
+        <option value="no">No</option>
+        <option value="yes">Yes</option>
+      </select>
+    </div>
+    {% endfor %}
+  </div>
+  <div class="mt-4 d-flex gap-2">
+    <button class="btn btn-primary" type="submit">Evaluate opportunity</button>
+    <a class="btn btn-outline-secondary" href="/">Cancel</a>
+  </div>
+</form>
+{% endblock %}
+
