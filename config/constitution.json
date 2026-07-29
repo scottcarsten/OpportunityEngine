@@ -1,7 +1,7 @@
 {
   "project": {
     "name": "OpportunityEngine",
-    "display_name": "Scott Opportunity Engine",
+    "display_name": "Opportunity Engine",
     "version": "0.1.0",
     "constitution_version": "1.0.0",
     "vision": "AI-assisted opportunity discovery, qualification, and application preparation while requiring Scott's approval before every external action.",
@@ -36,12 +36,17 @@
       "Consulting",
       "Project",
       "After-hours",
-      "Part-time"
+      "Part-time",
+      "1099"
     ],
     "focus_areas": [
       "IT infrastructure",
       "Systems administration",
       "Cloud",
+      "Office 365 Administration",
+      "365 Cloud Administrator", 
+       "Office 365 Hardening",
+       "AWS Cloud Administrator ",
       "Cybersecurity"
     ]
   },
