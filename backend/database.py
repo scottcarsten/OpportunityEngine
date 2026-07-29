@@ -1,7 +1,10 @@
 """SQLite initialization and connection management."""
 
 import sqlite3
+from contextlib import contextmanager
 from pathlib import Path
+from threading import RLock
+from typing import Iterator
 
 
 class Database:
@@ -11,6 +14,7 @@ class Database:
         self.database_path = database_path
         self.schema_path = schema_path
         self._connection: sqlite3.Connection | None = None
+        self._lock = RLock()
 
     @property
     def connection(self) -> sqlite3.Connection:
@@ -48,7 +52,14 @@ class Database:
 
     def ping(self) -> bool:
         """Return whether the database responds to a minimal query."""
-        return self.connection.execute("SELECT 1").fetchone()[0] == 1
+        with self.locked_connection() as connection:
+            return connection.execute("SELECT 1").fetchone()[0] == 1
+
+    @contextmanager
+    def locked_connection(self) -> Iterator[sqlite3.Connection]:
+        """Serialize access to the application-owned SQLite connection."""
+        with self._lock:
+            yield self.connection
 
     def close(self) -> None:
         """Close the active connection."""
