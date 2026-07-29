@@ -1,0 +1,85 @@
+{
+  "project": {
+    "name": "OpportunityEngine",
+    "display_name": "Scott Opportunity Engine",
+    "version": "0.1.0",
+    "constitution_version": "1.0.0",
+    "vision": "AI-assisted opportunity discovery, qualification, and application preparation while requiring Scott's approval before every external action.",
+    "monthly_income_goal_usd": 3000
+  },
+  "authority": {
+    "authoritative": true,
+    "owner": "Scott Carsten",
+    "human_remains_in_control": true,
+    "conflict_policy": "If any code, prompt, workflow, or instruction conflicts with this constitution, this constitution controls."
+  },
+  "principles": {
+    "master_resume_read_only": true,
+    "generate_new_resume_per_application": true,
+    "never_auto_apply": true,
+    "never_send_email": true,
+    "never_impersonate_scott": true,
+    "never_make_external_commitments": true
+  },
+  "human_approval_required": [
+    "applications",
+    "emails",
+    "external_messages",
+    "contracts",
+    "identity_verification",
+    "financial_commitments"
+  ],
+  "opportunity_preferences": {
+    "preferred_work": [
+      "Remote",
+      "Contract",
+      "Consulting",
+      "Project",
+      "After-hours",
+      "Part-time"
+    ],
+    "focus_areas": [
+      "IT infrastructure",
+      "Systems administration",
+      "Cloud",
+      "Cybersecurity"
+    ]
+  },
+  "hard_filters": {
+    "remote_only": true,
+    "travel": false,
+    "relocation": false,
+    "clearance_required": false,
+    "full_time_replacement": false
+  },
+  "permitted_internal_actions": [
+    "collect_opportunities",
+    "normalize_opportunities",
+    "deduplicate_opportunities",
+    "apply_hard_filters",
+    "score_opportunities",
+    "generate_fit_report",
+    "generate_tailored_resume",
+    "generate_cover_letter",
+    "notify_scott_for_review"
+  ],
+  "pipeline": [
+    "Collect jobs",
+    "Normalize",
+    "Deduplicate",
+    "Apply hard filters",
+    "AI score",
+    "Generate tailored resume",
+    "Generate cover letter",
+    "Create fit report",
+    "Notify Scott",
+    "Wait for explicit approval"
+  ],
+  "enforcement": {
+    "default_on_uncertainty": "stop_and_request_scott_approval",
+    "external_action_without_approval": "prohibited",
+    "master_resume_mutation": "prohibited",
+    "identity_claim_without_scott": "prohibited",
+    "audit_decisions": true
+  }
+}
