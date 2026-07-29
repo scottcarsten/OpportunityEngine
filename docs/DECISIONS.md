@@ -276,3 +276,45 @@ Backend implementation is gated by Issue #3. Scott and Alfred will review the in
 - Architecture and schema work may proceed.
 - No backend application code is created under the current milestone.
 - The approved outcome will be recorded as a new ADR or amendment.
+
+
+---
+
+## OE-ADR-013 — Approve the v0.1 backend contract
+
+**Status:** Accepted  
+**Date:** 2026-07-29  
+**Approved by:** Scott Carsten
+
+### Context
+
+Issue #3 defined the backend design gate required by OE-ADR-012. Scott reviewed the proposed first working version and approved it before implementation began.
+
+### Decision
+
+The v0.1 backend is a localhost-only, single-user FastAPI modular monolith with:
+
+- Manual opportunity entry before automated collection.
+- One source adapter only after the manual vertical slice works.
+- Deterministic constitutional filters before AI scoring.
+- Explainable, advisory AI scoring.
+- SQLite persistence.
+- A server-rendered Jinja2 and Bootstrap dashboard.
+- Manual collection before systemd or cron scheduling.
+- Environment-based secret configuration.
+- Structured logging and append-only auditing.
+- No external-action endpoints.
+
+Initial resource boundaries are health, readiness, opportunities, evaluations, review decisions, collection runs, and audit events. Exact opportunity endpoints will be implemented incrementally with tests.
+
+### Explicit exclusions
+
+v0.1 does not apply for work, send email or external messages, generate or modify résumés, sign into job sites, store website credentials, verify identity, accept contracts, make financial commitments, support multiple users, or expose the application publicly.
+
+### Consequences
+
+- The application binds only to a loopback IP.
+- A non-loopback bind request fails configuration validation.
+- The constitution is validated at startup and failure prevents readiness.
+- The first implementation milestone establishes configuration, persistence, audit, health, testing, and CI foundations.
+- New external capabilities require a separate decision and explicit approval.
