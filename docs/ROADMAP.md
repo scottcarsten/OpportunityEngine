@@ -9,9 +9,9 @@ The roadmap is directional rather than a promise of autonomous execution. Any ex
 ## Current status
 
 **Project phase:** v0.1 design baseline  
-**Completed:** project vision, authoritative constitution, initial README  
-**In progress:** architecture, decision log, persistence design, and GitHub backlog  
-**Next gate:** Scott's review of the MVP backend scope and API contract in Issue #3
+**Completed:** design baseline, backend foundation, and manual opportunity vertical slice  
+**In progress:** v0.1 opportunity collection, filtering, scoring, and review workflow  
+**Next milestone:** first approved source adapter and repeatable collection in Issue #4
 
 ## Definition of done
 
@@ -41,14 +41,26 @@ A milestone is complete when:
 
 ### Milestone 1 — Backend foundation
 
-- [ ] Create the FastAPI application skeleton.
-- [ ] Add typed configuration and secret handling.
+- [x] Create the FastAPI application skeleton.
+- [x] Add typed configuration and secret handling.
 - [ ] Add SQLAlchemy models and migrations based on `database/schema.sql`.
-- [ ] Add health and readiness endpoints.
-- [ ] Add structured logging and audit-event services.
-- [ ] Add unit and integration test infrastructure.
+- [x] Add health and readiness endpoints.
+- [x] Add structured logging and audit-event services.
+- [x] Add unit and integration test infrastructure.
 
-**Gate:** Scott approves Issue #3 before implementation begins.
+**Gate:** Scott approved Issue #3 before implementation began.
+
+### Milestone 1A — Manual opportunity vertical slice
+
+- [x] Add a server-rendered manual opportunity-entry form.
+- [x] Normalize supplied listing data.
+- [x] Detect exact duplicate entries with deterministic fingerprints.
+- [x] Apply the constitutional hard filters.
+- [x] Store the listing, source evidence, and filter evaluations in SQLite.
+- [x] Display the review inbox and detailed filter explanations.
+- [x] Test eligible, ineligible, unknown, and duplicate workflows.
+
+Completed in Issue #10.
 
 ### Milestone 2 — Collection and normalization
 
@@ -164,3 +176,5 @@ OpportunityEngine will not:
 - Issue #6 — Explainable scoring
 - Issue #7 — Document preparation and approvals
 - Issue #8 — Review dashboard and notifications
+- Issue #9 — Backend foundation
+- Issue #10 — Manual opportunity-entry vertical slice
