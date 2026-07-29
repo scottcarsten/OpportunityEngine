@@ -24,7 +24,10 @@ class Database:
             raise RuntimeError(f"database schema not found: {self.schema_path}")
 
         self.database_path.parent.mkdir(parents=True, exist_ok=True)
-        connection = sqlite3.connect(self.database_path)
+        # FastAPI runs synchronous endpoints in worker threads. The connection
+        # is application-owned and may therefore be used outside the lifespan
+        # thread; transactions remain short and service-controlled.
+        connection = sqlite3.connect(self.database_path, check_same_thread=False)
         connection.row_factory = sqlite3.Row
         connection.execute("PRAGMA foreign_keys = ON")
         connection.execute("PRAGMA journal_mode = WAL")
@@ -52,4 +55,3 @@ class Database:
         if self._connection is not None:
             self._connection.close()
             self._connection = None
-
