@@ -9,9 +9,9 @@ The roadmap is directional rather than a promise of autonomous execution. Any ex
 ## Current status
 
 **Project phase:** v0.1 design baseline  
-**Completed:** design baseline, backend foundation, manual opportunity vertical slice, and the first source adapter (We Work Remotely RSS)  
-**In progress:** v0.1 deduplication, hard filters, scoring, and review workflow  
-**Next milestone:** the remaining Milestone 3 work — likely-duplicate detection beyond exact fingerprints, and an explicit, audited manual-override path — in Issue #5
+**Completed:** design baseline, backend foundation, manual opportunity vertical slice, the first source adapter (We Work Remotely RSS), and deduplication/hard-filter overrides (Milestone 3)  
+**In progress:** v0.1 explainable scoring and review workflow  
+**Next milestone:** explainable scoring dimensions and weights in Issue #6
 
 ## Definition of done
 
@@ -79,17 +79,19 @@ Completed: first source is We Work Remotely's DevOps and Sysadmin RSS feed
 
 - [x] Generate deterministic opportunity fingerprints.
 - [x] Detect exact duplicates via deterministic fingerprints.
-- [ ] Detect likely duplicates via similarity review.
+- [x] Detect likely duplicates via similarity review.
 - [x] Enforce remote-only, no-travel, no-relocation, no-clearance, and no-full-time-replacement rules.
 - [x] Store every filter decision and explanation.
-- [ ] Provide a manual override path that is explicit and audited.
+- [x] Provide a manual override path that is explicit and audited.
 
 Fingerprinting, exact-duplicate short-circuiting, hard-filter enforcement,
-and filter-decision storage were already delivered in Milestones 1A/2
+and filter-decision storage were delivered in Milestones 1A/2
 (`OpportunityService._fingerprint`/`_evaluate_filters`, shared by manual
-entry and collection). Remaining: likely-duplicate detection beyond exact
-fingerprint matches, and an explicit, audited manual-override path.
-Tracked by Issue #5.
+entry and collection). Likely-duplicate detection
+(`OpportunityService._detect_likely_duplicates`, recorded as
+`deduplication_decisions` rows) and the audited manual-override path
+(`OpportunityService.override_lifecycle_status`, recorded as `audit_events`
+rows) closed out the milestone (`OE-ADR-016`). Tracked by Issue #5.
 
 ### Milestone 4 — Explainable scoring
 

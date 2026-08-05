@@ -106,6 +106,29 @@ def opportunity_detail(
     )
 
 
+@router.post("/opportunities/{opportunity_id}/override")
+async def override_opportunity(
+    request: Request, opportunity_id: int
+) -> RedirectResponse:
+    service = _service(request)
+    if service.get_opportunity(opportunity_id) is None:
+        raise HTTPException(status_code=404, detail="opportunity not found")
+
+    form = await request.form()
+    try:
+        new_status = cast(
+            Literal["eligible", "ineligible"],
+            _choice(str(form.get("new_status", "")), {"eligible", "ineligible"}),
+        )
+        service.override_lifecycle_status(
+            opportunity_id, new_status, str(form.get("rationale", ""))
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    return RedirectResponse(url=f"/opportunities/{opportunity_id}", status_code=303)
+
+
 def _choice(value: str, allowed: set[str]) -> str:
     if value not in allowed:
         raise ValueError(f"unsupported choice: {value}")

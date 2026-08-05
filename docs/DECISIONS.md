@@ -425,3 +425,57 @@ one's.
   registering it in `backend/cli.py`'s `ADAPTERS` map.
 - Milestone 3's likely-duplicate detection and audited manual-override path
   remain open.
+
+---
+
+## OE-ADR-016 — Human-only, audited hard-filter override
+
+**Status:** Accepted
+**Date:** 2026-08-05
+
+### Context
+
+Milestone 3's two remaining items were likely-duplicate detection beyond
+exact fingerprint matches, and a manual path to override a hard-filter
+outcome. `docs/ARCHITECTURE.md` §5.4 states a hard filter's rule is
+deterministic and that "AI may extract evidence used by a rule, but it may
+not override the rule" — it does not say a human may not. Scott chose to
+scope the override narrowly to the hard-filter decision itself
+(`eligible`/`ineligible`), leaving the separate shortlist/reject/defer
+review workflow (`review_decisions`) to Milestone 5.
+
+### Decision
+
+- Likely-duplicate detection (`OpportunityService._detect_likely_duplicates`)
+  runs inside `_ingest`, after the exact-fingerprint check misses, comparing
+  the new opportunity against existing ones with the same organization name
+  using `difflib.SequenceMatcher` over the same identity string
+  `_fingerprint` already hashes. Matches at or above 0.85 become a
+  `deduplication_decisions` row (`method="similarity"`, `decided_by=
+  "system"`). Both opportunities remain separate, undecided rows — nothing
+  is auto-merged or suppressed, per ARCHITECTURE §5.3.
+- `OpportunityService.override_lifecycle_status(opportunity_id, new_status,
+  rationale)` lets Scott move an opportunity between `eligible` and
+  `ineligible` directly. It requires a non-empty rationale, updates
+  `opportunities.lifecycle_status`, and records the action via
+  `AuditService` (`event_type="hard_filter_override"`, `actor_type=
+  "scott"`) — the first real caller `AuditService` has had since it was
+  built in Milestone 1.
+- The override never touches `filter_evaluations` rows. Those stay exactly
+  as the hard filters produced them (and are DB-trigger-protected from
+  ever changing) — the override is a second, additional fact layered on
+  top, not a correction of the first one.
+- No `approval_requests` row is created: per the constitution, approval
+  gating applies to *external* actions (applications, email, contracts).
+  An internal eligibility call is one Scott is already permitted to make
+  directly.
+
+### Consequences
+
+- AI/automation must never call `override_lifecycle_status` — nothing in
+  the codebase does, and any future AI-scoring code must not gain this
+  capability without a new, explicit decision.
+- `templates/opportunity_detail.html` surfaces both: a "possible duplicate"
+  link to the other opportunity, and an override form plus history, so the
+  override path is observable, not just logged.
+- Milestone 3 is complete. Milestone 4 (explainable scoring) is next.

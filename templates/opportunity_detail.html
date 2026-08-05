@@ -8,6 +8,14 @@
 </div>
 {% endif %}
 
+{% for match in opportunity.likely_duplicates %}
+<div class="alert alert-secondary">
+  Possible duplicate of
+  <a href="/opportunities/{{ match.other_id }}">{{ match.other_title }}</a>
+  (similarity {{ "%.0f"|format(match.confidence * 100) }}%). {{ match.explanation }}
+</div>
+{% endfor %}
+
 <div class="d-flex justify-content-between align-items-start mb-4">
   <div>
     <h1 class="h2 mb-1">{{ opportunity.title }}</h1>
@@ -71,6 +79,34 @@
         <div class="small text-secondary">Evidence: {{ filter.evidence }}</div>
       </div>
       {% endfor %}
+    </section>
+    <section class="bg-white border rounded p-4 mt-4">
+      <h2 class="h4">Manual override</h2>
+      <p class="small text-secondary">
+        Override the eligibility decision above. The original filter
+        outcomes are never changed &mdash; this is recorded as a separate,
+        audited decision.
+      </p>
+      <form method="post" action="/opportunities/{{ opportunity.id }}/override">
+        <div class="mb-3">
+          <label class="form-label small" for="rationale">Rationale</label>
+          <textarea class="form-control" id="rationale" name="rationale" rows="2" required></textarea>
+        </div>
+        <button type="submit" name="new_status" value="eligible"
+                class="btn btn-sm btn-outline-success">Mark eligible</button>
+        <button type="submit" name="new_status" value="ineligible"
+                class="btn btn-sm btn-outline-danger">Mark ineligible</button>
+      </form>
+      {% if opportunity.override_history %}
+      <h3 class="h6 mt-4">Override history</h3>
+      {% for override in opportunity.override_history %}
+      <div class="border-top py-2 small">
+        <div>{{ override.summary }}</div>
+        <div class="text-secondary">{{ override.rationale }}</div>
+        <div class="text-secondary">{{ override.occurred_at }}</div>
+      </div>
+      {% endfor %}
+      {% endif %}
     </section>
   </div>
 </div>

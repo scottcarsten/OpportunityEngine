@@ -92,3 +92,59 @@ def test_duplicate_entry_reuses_existing_record(client: TestClient) -> None:
     detail = client.get(second.headers["location"])
     assert "no duplicate was created" in detail.text
 
+
+def test_override_marks_ineligible_opportunity_eligible_and_is_audited(
+    client: TestClient,
+) -> None:
+    created = client.post(
+        "/opportunities",
+        data=_form(title="Traveling Administrator", requires_travel="yes"),
+        follow_redirects=False,
+    )
+    detail_path = urlparse(created.headers["location"]).path
+
+    override = client.post(
+        f"{detail_path}/override",
+        data={
+            "new_status": "eligible",
+            "rationale": "Confirmed with the client: travel is optional.",
+        },
+        follow_redirects=False,
+    )
+    assert override.status_code == 303
+
+    detail = client.get(detail_path)
+    assert "Eligible" in detail.text
+    assert "Confirmed with the client: travel is optional." in detail.text
+    # the original hard-filter outcome must remain visible and unchanged
+    assert "The opportunity must not require travel." in detail.text
+    assert ">Fail<" in detail.text
+
+
+def test_override_requires_rationale(client: TestClient) -> None:
+    created = client.post(
+        "/opportunities",
+        data=_form(title="No Rationale Administrator", requires_travel="yes"),
+        follow_redirects=False,
+    )
+    detail_path = urlparse(created.headers["location"]).path
+
+    override = client.post(
+        f"{detail_path}/override",
+        data={"new_status": "eligible", "rationale": ""},
+        follow_redirects=False,
+    )
+    assert override.status_code == 422
+
+    detail = client.get(detail_path)
+    assert "Ineligible" in detail.text
+
+
+def test_override_unknown_opportunity_is_404(client: TestClient) -> None:
+    response = client.post(
+        "/opportunities/999/override",
+        data={"new_status": "eligible", "rationale": "does not matter"},
+        follow_redirects=False,
+    )
+    assert response.status_code == 404
+

@@ -3,7 +3,8 @@
 import hashlib
 import json
 from dataclasses import asdict
-from typing import Any
+from difflib import SequenceMatcher
+from typing import Any, Literal
 
 from sqlalchemy import select
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
@@ -11,6 +12,8 @@ from sqlalchemy.orm import Session
 
 from backend.database import Database
 from backend.db.models import (
+    AuditEventRecord,
+    DeduplicationDecision,
     FilterEvaluation,
     Opportunity,
     OpportunitySource,
@@ -18,8 +21,16 @@ from backend.db.models import (
     SourceRecord,
 )
 from backend.models import OpportunityInput
+from backend.services.audit_service import AuditEvent, AuditService
 from backend.services.constitution_service import Constitution
 from backend.timeutil import now_iso
+
+# A likely-duplicate match must be at or above this ratio over the same
+# organization+title+location+description identity string used for the
+# exact fingerprint. Chosen conservatively: within the same organization,
+# 0.85+ similarity is almost always a repost or near-duplicate rather than
+# a genuinely different role with a shared boilerplate "About us" section.
+_LIKELY_DUPLICATE_THRESHOLD = 0.85
 
 
 class OpportunityService:
@@ -83,6 +94,7 @@ class OpportunityService:
 
         try:
             opportunity_row = self._insert_opportunity(session, normalized, fingerprint)
+            self._detect_likely_duplicates(session, opportunity_row, normalized)
             source_record_id = self._insert_source_record(
                 session,
                 source_id,
@@ -108,6 +120,54 @@ class OpportunityService:
             raise
 
         return opportunity_row.id, True
+
+    def override_lifecycle_status(
+        self, opportunity_id: int, new_status: Literal["eligible", "ineligible"], rationale: str
+    ) -> None:
+        """Let Scott explicitly override a hard-filter outcome, always audited.
+
+        Never mutates `filter_evaluations` (those rows are append-only and
+        DB-trigger-protected) — the original rule outcome stays visible
+        exactly as it was. AI/automation must never call this; nothing in
+        the codebase does. See `OE-ADR-016`.
+        """
+        rationale = rationale.strip()
+        if not rationale:
+            raise ValueError("rationale is required")
+        if new_status not in ("eligible", "ineligible"):
+            raise ValueError("new_status must be 'eligible' or 'ineligible'")
+
+        with self.database.session() as session:
+            opportunity = session.execute(
+                select(Opportunity).where(Opportunity.id == opportunity_id)
+            ).scalar_one_or_none()
+            if opportunity is None:
+                raise ValueError(f"opportunity not found: {opportunity_id}")
+
+            try:
+                previous_status = opportunity.lifecycle_status
+                opportunity.lifecycle_status = new_status
+                opportunity.updated_at = now_iso()
+                AuditService(session).record(
+                    AuditEvent(
+                        event_type="hard_filter_override",
+                        actor_type="scott",
+                        entity_type="opportunity",
+                        entity_id=opportunity_id,
+                        constitution_version=self.constitution.version,
+                        summary=(
+                            f"Overrode lifecycle status from {previous_status} to {new_status}."
+                        ),
+                        details={
+                            "previous_status": previous_status,
+                            "new_status": new_status,
+                            "rationale": rationale,
+                        },
+                    )
+                )
+            except Exception:
+                session.rollback()
+                raise
 
     def list_opportunities(self) -> list[dict[str, Any]]:
         """Return opportunities newest first for the review inbox."""
@@ -145,8 +205,53 @@ class OpportunityService:
                 .where(FilterEvaluation.opportunity_id == opportunity_id)
                 .order_by(FilterEvaluation.id)
             ).mappings().all()
+            retained_side = session.execute(
+                select(
+                    DeduplicationDecision.duplicate_opportunity_id.label("other_id"),
+                    Opportunity.title.label("other_title"),
+                    DeduplicationDecision.confidence,
+                    DeduplicationDecision.explanation,
+                )
+                .join(Opportunity, Opportunity.id == DeduplicationDecision.duplicate_opportunity_id)
+                .where(DeduplicationDecision.retained_opportunity_id == opportunity_id)
+            ).mappings().all()
+            duplicate_side = session.execute(
+                select(
+                    DeduplicationDecision.retained_opportunity_id.label("other_id"),
+                    Opportunity.title.label("other_title"),
+                    DeduplicationDecision.confidence,
+                    DeduplicationDecision.explanation,
+                )
+                .join(Opportunity, Opportunity.id == DeduplicationDecision.retained_opportunity_id)
+                .where(DeduplicationDecision.duplicate_opportunity_id == opportunity_id)
+            ).mappings().all()
+            override_rows = session.execute(
+                select(
+                    AuditEventRecord.summary,
+                    AuditEventRecord.details_json,
+                    AuditEventRecord.occurred_at,
+                )
+                .where(
+                    AuditEventRecord.entity_type == "opportunity",
+                    AuditEventRecord.entity_id == opportunity_id,
+                    AuditEventRecord.event_type == "hard_filter_override",
+                )
+                .order_by(AuditEventRecord.id.desc())
+            ).mappings().all()
+
         result = dict(opportunity)
         result["filters"] = [dict(row) for row in filters]
+        result["likely_duplicates"] = [dict(row) for row in retained_side] + [
+            dict(row) for row in duplicate_side
+        ]
+        result["override_history"] = [
+            {
+                "summary": row["summary"],
+                "occurred_at": row["occurred_at"],
+                **json.loads(row["details_json"] or "{}"),
+            }
+            for row in override_rows
+        ]
         return result
 
     @staticmethod
@@ -187,16 +292,81 @@ class OpportunityService:
         )
 
     @staticmethod
-    def _fingerprint(opportunity: OpportunityInput) -> str:
-        identity = "\n".join(
+    def _identity_string(
+        organization_name: str, title: str, location_text: str, description: str
+    ) -> str:
+        return "\n".join(
             (
-                opportunity.organization_name.casefold(),
-                opportunity.title.casefold(),
-                opportunity.location_text.casefold(),
-                opportunity.description.casefold(),
+                (organization_name or "").casefold(),
+                (title or "").casefold(),
+                (location_text or "").casefold(),
+                (description or "").casefold(),
             )
         )
+
+    @classmethod
+    def _fingerprint(cls, opportunity: OpportunityInput) -> str:
+        identity = cls._identity_string(
+            opportunity.organization_name,
+            opportunity.title,
+            opportunity.location_text,
+            opportunity.description,
+        )
         return hashlib.sha256(identity.encode("utf-8")).hexdigest()
+
+    def _detect_likely_duplicates(
+        self, session: Session, new_row: Opportunity, normalized: OpportunityInput
+    ) -> None:
+        """Flag likely duplicates via similarity review (ARCHITECTURE.md §5.3, layer 4).
+
+        Only compares against opportunities sharing the same organization —
+        scoped at ingest time against what already exists, not a batch
+        reconciliation sweep across all pairs. Both records remain separate;
+        nothing here suppresses or merges an opportunity.
+        """
+        if not normalized.organization_name:
+            return
+
+        target_org = normalized.organization_name.casefold()
+        new_identity = self._identity_string(
+            normalized.organization_name,
+            normalized.title,
+            normalized.location_text,
+            normalized.description,
+        )
+
+        candidates = session.execute(
+            select(Opportunity).where(
+                Opportunity.id != new_row.id,
+                Opportunity.organization_name.isnot(None),
+            )
+        ).scalars().all()
+
+        for candidate in candidates:
+            if candidate.organization_name.casefold() != target_org:
+                continue
+            candidate_identity = self._identity_string(
+                candidate.organization_name,
+                candidate.title,
+                candidate.location_text,
+                candidate.description,
+            )
+            ratio = SequenceMatcher(None, new_identity, candidate_identity).ratio()
+            if ratio < _LIKELY_DUPLICATE_THRESHOLD:
+                continue
+            session.add(
+                DeduplicationDecision(
+                    retained_opportunity_id=candidate.id,
+                    duplicate_opportunity_id=new_row.id,
+                    method="similarity",
+                    confidence=ratio,
+                    explanation=(
+                        f"Title/description similarity {ratio:.2f} for organization "
+                        f"'{normalized.organization_name}'."
+                    ),
+                    decided_by="system",
+                )
+            )
 
     @staticmethod
     def ensure_source(session: Session, name: str, source_type: str, base_url: str | None) -> int:

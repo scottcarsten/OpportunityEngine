@@ -144,14 +144,15 @@ Working today:
   DevOps and Sysadmin RSS feed) via `python -m backend.cli collect
   we_work_remotely`, sharing the same normalization and hard-filter path
   as manual entry
-- Deterministic exact-fingerprint deduplication and hard-filter evaluation
+- Deterministic exact-fingerprint deduplication, plus similarity-based
+  likely-duplicate detection
+- An explicit, audited manual override of a hard-filter eligibility
+  decision (never touches the original filter history)
 - Review inbox and detailed filter explanations
 - Automated test suite and GitHub Actions CI
 
 Not implemented yet:
 
-- Likely-duplicate detection beyond exact fingerprints, and an audited
-  manual-override path (Milestone 3)
 - AI scoring
 - Résumé or cover-letter generation
 - Applications, email, or any external action
