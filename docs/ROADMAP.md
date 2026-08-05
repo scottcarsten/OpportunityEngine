@@ -8,10 +8,10 @@ The roadmap is directional rather than a promise of autonomous execution. Any ex
 
 ## Current status
 
-**Project phase:** v0.1 MVP complete  
-**Completed:** all of v0.1 — design baseline, backend foundation, manual opportunity vertical slice, the first source adapter (We Work Remotely RSS), deduplication/hard-filter overrides (Milestone 3), Claude Opus 5-backed explainable scoring (Milestone 4), and the review inbox (Milestone 5)  
-**In progress:** nothing active — v0.1's MVP outcome is reached  
-**Next milestone:** v0.2 (application preparation, Issue #7) — importing a versioned master résumé and generating tailored résumé/cover-letter/fit-report drafts, still with no external action
+**Project phase:** v0.2 in progress  
+**Completed:** all of v0.1 (design baseline through the review inbox), plus v0.2's master résumé import/versioning slice  
+**In progress:** v0.2 (application preparation) — tailored résumé/cover-letter/fit-report generation, claim-grounding, approval states, and DOCX/PDF export remain  
+**Next milestone:** generate a new tailored résumé per selected opportunity, grounded in the master résumé and flagging unsupported claims (Issue #7)
 
 ## Definition of done
 
@@ -132,7 +132,7 @@ page now also shows its source (`sources`/`source_records`). See
 
 **Goal:** Prepare high-quality, opportunity-specific materials while treating the master résumé as immutable source data.
 
-- [ ] Import and version a master résumé as read-only.
+- [x] Import and version a master résumé as read-only.
 - [ ] Generate a new tailored résumé per selected opportunity.
 - [ ] Generate cover-letter and fit-report drafts.
 - [ ] Compare generated claims against approved source material.
@@ -140,7 +140,14 @@ page now also shows its source (`sources`/`source_records`). See
 - [ ] Add document versioning and approval states.
 - [ ] Export DOCX and PDF artifacts.
 
-Tracked by Issue #7.
+Master résumé import/versioning (`backend/services/resume_service.py`,
+`/resume`) is the first of v0.2's slices — everything else here depends on
+a master résumé existing. Content-hash-addressed storage means a row's
+`storage_path` never depends on the untrusted uploaded filename; "current"
+version is derived (`MAX(version) WHERE is_master=1`), not a mutable flag,
+since the DB triggers make a row permanently immutable once inserted. See
+`OE-ADR-019`. The remaining six items are follow-on milestones. Tracked by
+Issue #7.
 
 **v0.2 outcome:** Scott can approve or reject complete application packages, but the system still cannot submit them.
 

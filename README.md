@@ -132,7 +132,7 @@ pyproject.toml
 
 ## Status
 
-✅ **v0.1 MVP complete**
+✅ **v0.1 MVP complete** · 🚧 **v0.2 in progress**
 
 Working today:
 
@@ -155,11 +155,15 @@ Working today:
   (always audited), internal notifications for anything needing review,
   and the opportunity's source shown alongside its filters, score, and
   full decision history
+- Importing and versioning a master résumé as permanent, read-only source
+  material (`/resume`) — a correction is always a new version; nothing
+  can edit or delete one once imported
 - Automated test suite and GitHub Actions CI
 
 Not implemented yet:
 
-- Résumé or cover-letter generation
+- Tailored résumé/cover-letter/fit-report generation grounded in the
+  master résumé, document approval states, and DOCX/PDF export
 - Applications, email, or any external action
 
 ---

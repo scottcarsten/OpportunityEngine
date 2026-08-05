@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+{% block title %}Master résumé · OpportunityEngine{% endblock %}
+{% block content %}
+<div class="mb-4">
+  <h1 class="h2 mb-1">Master résumé</h1>
+  <p class="text-secondary mb-0">
+    Read-only source material. A correction is always imported as a new
+    version &mdash; the current and every prior version are permanent.
+  </p>
+</div>
+
+<div class="row g-4">
+  <div class="col-lg-6">
+    <section class="bg-white border rounded p-4">
+      <h2 class="h4">Current version</h2>
+      {% if current %}
+      <dl class="row mb-0">
+        <dt class="col-sm-4">Version</dt>
+        <dd class="col-sm-8">{{ current.version }}</dd>
+        <dt class="col-sm-4">File</dt>
+        <dd class="col-sm-8">{{ current.file_name }} ({{ current.mime_type }})</dd>
+        <dt class="col-sm-4">Imported</dt>
+        <dd class="col-sm-8">{{ current.imported_at }} by {{ current.imported_by }}</dd>
+        {% if current.notes %}
+        <dt class="col-sm-4">Notes</dt>
+        <dd class="col-sm-8">{{ current.notes }}</dd>
+        {% endif %}
+      </dl>
+      {% else %}
+      <p class="text-secondary mb-0">No master résumé imported yet.</p>
+      {% endif %}
+    </section>
+
+    {% if history|length > 1 %}
+    <section class="bg-white border rounded p-4 mt-4">
+      <h2 class="h4">Version history</h2>
+      {% for version in history[1:] %}
+      <div class="border-top py-2 small">
+        <div>Version {{ version.version }} &mdash; {{ version.file_name }}</div>
+        <div class="text-secondary">{{ version.imported_at }} by {{ version.imported_by }}</div>
+        {% if version.notes %}
+        <div class="text-secondary">{{ version.notes }}</div>
+        {% endif %}
+      </div>
+      {% endfor %}
+    </section>
+    {% endif %}
+  </div>
+
+  <div class="col-lg-6">
+    <section class="bg-white border rounded p-4">
+      <h2 class="h4">Import a new version</h2>
+      <p class="small text-secondary">
+        Accepted formats: PDF, DOCX, or plain text, up to 10&nbsp;MB.
+      </p>
+      <form method="post" action="/resume" enctype="multipart/form-data">
+        <div class="mb-3">
+          <label class="form-label small" for="file">Résumé file</label>
+          <input class="form-control" type="file" id="file" name="file" required>
+        </div>
+        <div class="mb-3">
+          <label class="form-label small" for="notes">Notes (optional)</label>
+          <textarea class="form-control" id="notes" name="notes" rows="2"></textarea>
+        </div>
+        <button type="submit" class="btn btn-sm btn-primary">Import</button>
+      </form>
+    </section>
+  </div>
+</div>
+{% endblock %}

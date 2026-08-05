@@ -623,3 +623,56 @@ Milestone 3: `review_decisions` and `notifications`.
   instead of lumping every non-eligible/ineligible status into "Manual
   review".
 - v0.2 (application preparation, Issue #7) is next.
+
+---
+
+## OE-ADR-019 — Master résumé versions are derived, not flagged current
+
+**Status:** Accepted
+**Date:** 2026-08-06
+
+### Context
+
+v0.2 (Issue #7) begins with "import and version a master résumé as
+read-only" — everything else in v0.2 (tailored résumé generation, cover
+letters, fit reports, claim-grounding, export) depends on a master résumé
+existing, so it's the first slice. `resume_sources` and its two protective
+triggers (`protect_master_resume_update`, `protect_master_resume_delete` —
+both `WHEN OLD.is_master = 1`) were already designed in Milestone 0 and,
+like several tables before it, sat unused.
+
+The triggers mean a row with `is_master = 1` cannot be updated or deleted
+under any circumstances, including flipping its own `is_master` flag to 0.
+There is no way to "unmark the old version as current."
+
+### Decision
+
+- `backend/services/resume_service.py`'s `ResumeService` never attempts an
+  `UPDATE` or `DELETE` on `resume_sources`. "Current" is derived —
+  `MAX(version) WHERE is_master = 1` — not stored as a pointer. A
+  correction is always a new row with `supersedes_id` pointing at the
+  previous highest-version row (`OE-ADR-003`).
+- Re-importing byte-identical content (same `sha256` hash) is a no-op that
+  returns the existing version, mirroring the fingerprint short-circuit
+  already established in `OpportunityService._ingest`.
+- The stored file path is `{content_hash}{extension}`, where the extension
+  comes from a small validated MIME-type allowlist (PDF, DOCX, plain text)
+  — **never** the user-supplied filename. This, not filename validation, is
+  what actually prevents path traversal (ARCHITECTURE.md §10): the
+  filename is stored only as display metadata and never touches the
+  filesystem path.
+- A 10 MB size cap and the MIME-type allowlist are enforced before any
+  file write or database operation.
+- Every import is audited (`event_type="resume_imported"`) — a
+  constitutionally significant action per `principles.master_resume_read_only`
+  in `config/constitution.json`.
+
+### Consequences
+
+- No code path anywhere can mutate or delete a master résumé version —
+  matching `principles.master_resume_read_only` structurally, not just by
+  convention.
+- Future document-generation work (the next v0.2 slice) reads
+  `ResumeService.get_current_master()` for the résumé to ground claims
+  against, and can freely reference `resume_sources.id` by version without
+  worrying that version's content will ever change underneath it.
