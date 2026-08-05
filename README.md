@@ -86,7 +86,7 @@ pyproject.toml
 - Docker
 - SQLAlchemy
 - Bootstrap
-- OpenAI API
+- Claude API (Anthropic)
 - python-docx
 - Jinja2
 - Nginx
@@ -148,12 +148,14 @@ Working today:
   likely-duplicate detection
 - An explicit, audited manual override of a hard-filter eligibility
   decision (never touches the original filter history)
+- Explainable, advisory fit scoring via the Claude API (Opus 5) for
+  opportunities that already passed hard filters — never authorizes any
+  action, and never changes an opportunity's eligibility
 - Review inbox and detailed filter explanations
 - Automated test suite and GitHub Actions CI
 
 Not implemented yet:
 
-- AI scoring
 - Résumé or cover-letter generation
 - Applications, email, or any external action
 
@@ -172,6 +174,11 @@ uvicorn backend.app:app --host 127.0.0.1 --port 8000
 ```
 
 Open `http://127.0.0.1:8000` in a browser.
+
+Scoring an opportunity calls the Claude API and needs an API key from
+[console.anthropic.com](https://console.anthropic.com) — separate from a
+claude.ai Pro/Max subscription, billed pay-as-you-go. Set
+`ANTHROPIC_API_KEY` in `.env`; everything else works without it.
 
 Run the tests with:
 

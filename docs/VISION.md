@@ -49,6 +49,6 @@ The engine rejects opportunities that require:
 
 ## Planned platform
 
-The planned platform uses Linux Mint, Python, FastAPI, SQLAlchemy, SQLite with a possible PostgreSQL migration, Docker, Bootstrap, Jinja2, OpenAI API, python-docx, Nginx, and cron or systemd scheduling.
+The planned platform uses Linux Mint, Python, FastAPI, SQLAlchemy, SQLite with a possible PostgreSQL migration, Docker, Bootstrap, Jinja2, the Claude API (Anthropic), python-docx, Nginx, and cron or systemd scheduling.
 
 The project's authoritative behavioral and safety rules are defined in `config/constitution.json`.

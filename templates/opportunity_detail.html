@@ -108,6 +108,68 @@
       {% endfor %}
       {% endif %}
     </section>
+    <section class="bg-white border rounded p-4 mt-4">
+      <h2 class="h4">Fit score</h2>
+      <p class="small text-secondary">
+        Advisory only. A score never authorizes shortlisting, applying, or
+        any other action.
+      </p>
+      {% if opportunity.lifecycle_status == "eligible" %}
+      <form method="post" action="/opportunities/{{ opportunity.id }}/score" class="mb-3">
+        <button type="submit" class="btn btn-sm btn-primary">Score this opportunity</button>
+      </form>
+      {% else %}
+      <p class="small text-secondary">Only eligible opportunities can be scored.</p>
+      {% endif %}
+
+      {% if opportunity.scoring_runs %}
+      {% set latest = opportunity.scoring_runs[0] %}
+      <div class="border-top pt-3">
+        {% if latest.status == "succeeded" %}
+          <div class="d-flex justify-content-between align-items-baseline">
+            <strong>Overall score</strong>
+            <span class="fs-4">{{ "%.0f"|format(latest.overall_score) }}/100</span>
+          </div>
+          <div class="small text-secondary mb-2">
+            Confidence: {{ "%.0f"|format(latest.confidence * 100) }}%
+          </div>
+          <p class="small mb-2">{{ latest.fit_summary }}</p>
+          {% if latest.concerns %}
+          <p class="small text-danger mb-2">Concerns: {{ latest.concerns }}</p>
+          {% endif %}
+          {% for component in latest.components %}
+          <div class="d-flex justify-content-between small border-top py-1">
+            <span>
+              {{ component.component_code|replace("_", " ")|title }}
+              (weight {{ "%.0f"|format(component.weight * 100) }}%)
+            </span>
+            <span>{{ "%.0f"|format(component.score) }}/100</span>
+          </div>
+          <div class="small text-secondary mb-1">{{ component.explanation }}</div>
+          {% endfor %}
+        {% else %}
+          <div class="alert alert-warning small mb-0">
+            Scoring {{ latest.status }}{% if latest.error_summary %}: {{ latest.error_summary }}{% endif %}
+          </div>
+        {% endif %}
+        <div class="small text-secondary mt-2">
+          {{ latest.provider }} / {{ latest.model }} &middot; {{ latest.started_at }}
+        </div>
+      </div>
+      {% endif %}
+
+      {% if opportunity.scoring_runs|length > 1 %}
+      <h3 class="h6 mt-4">Scoring history</h3>
+      {% for run in opportunity.scoring_runs[1:] %}
+      <div class="border-top py-2 small">
+        <div>
+          {{ run.status|title }}{% if run.overall_score is not none %} &middot; {{ "%.0f"|format(run.overall_score) }}/100{% endif %}
+        </div>
+        <div class="text-secondary">{{ run.started_at }}</div>
+      </div>
+      {% endfor %}
+      {% endif %}
+    </section>
   </div>
 </div>
 {% endblock %}

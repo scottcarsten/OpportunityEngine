@@ -9,9 +9,9 @@ The roadmap is directional rather than a promise of autonomous execution. Any ex
 ## Current status
 
 **Project phase:** v0.1 design baseline  
-**Completed:** design baseline, backend foundation, manual opportunity vertical slice, the first source adapter (We Work Remotely RSS), and deduplication/hard-filter overrides (Milestone 3)  
-**In progress:** v0.1 explainable scoring and review workflow  
-**Next milestone:** explainable scoring dimensions and weights in Issue #6
+**Completed:** design baseline, backend foundation, manual opportunity vertical slice, the first source adapter (We Work Remotely RSS), deduplication/hard-filter overrides (Milestone 3), and Claude Opus 5-backed explainable scoring (Milestone 4)  
+**In progress:** v0.1 review workflow  
+**Next milestone:** Milestone 5 (review inbox) in Issue #8 — note the opportunity detail page already shows filters, score components, fit, and concerns/history from Milestones 3–4; what's still missing is surfacing the source explicitly, the shortlist/reject/defer/request-preparation decision workflow, and internal notifications
 
 ## Definition of done
 
@@ -95,13 +95,19 @@ rows) closed out the milestone (`OE-ADR-016`). Tracked by Issue #5.
 
 ### Milestone 4 — Explainable scoring
 
-- [ ] Define scoring dimensions and weights.
-- [ ] Score skills, work type, schedule, compensation, risk, and confidence.
-- [ ] Store model, prompt, and scoring-version metadata.
-- [ ] Produce plain-language fit and concern explanations.
-- [ ] Ensure a score never implies permission to act.
+- [x] Define scoring dimensions and weights.
+- [x] Score skills, work type, schedule, compensation, risk, and confidence.
+- [x] Store model, prompt, and scoring-version metadata.
+- [x] Produce plain-language fit and concern explanations.
+- [x] Ensure a score never implies permission to act.
 
-Tracked by Issue #6.
+Scoring is powered by Claude Opus 5 (`backend/scoring/anthropic_provider.py`)
+behind a `ScoringProvider` interface (`backend/scoring/base.py`), so no
+domain code depends on a specific model. `ScoringService`
+(`backend/services/scoring_service.py`) enforces "only score opportunities
+that already passed hard filters" and never writes
+`opportunities.lifecycle_status` — the score is structurally advisory only.
+See `OE-ADR-017`. Tracked by Issue #6.
 
 ### Milestone 5 — Review inbox
 

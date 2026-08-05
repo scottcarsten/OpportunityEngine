@@ -61,7 +61,7 @@ flowchart TD
     C --> E["Opportunity Engine"]
     R["Read-only master résumé"] --> E
     E --> D["SQLite database"]
-    E --> O["OpenAI API"]
+    E --> O["Claude API"]
     E --> U["Local review dashboard"]
     U --> H["Scott"]
 ```
@@ -263,7 +263,7 @@ These are architectural candidates, not a committed endpoint contract.
 
 ## 9. AI boundary
 
-OpenAI integration is isolated behind a provider interface. Domain code must not depend directly on a specific model name.
+Claude (Anthropic API) integration is isolated behind a provider interface. Domain code must not depend directly on a specific model name. See `OE-ADR-017`.
 
 Every AI-assisted result records:
 

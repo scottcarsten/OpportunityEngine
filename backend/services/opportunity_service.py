@@ -17,6 +17,8 @@ from backend.db.models import (
     FilterEvaluation,
     Opportunity,
     OpportunitySource,
+    ScoreComponent,
+    ScoringRun,
     Source,
     SourceRecord,
 )
@@ -238,6 +240,26 @@ class OpportunityService:
                 )
                 .order_by(AuditEventRecord.id.desc())
             ).mappings().all()
+            scoring_run_rows = session.execute(
+                select(ScoringRun.__table__)
+                .where(ScoringRun.opportunity_id == opportunity_id)
+                .order_by(ScoringRun.id.desc())
+            ).mappings().all()
+            component_rows = session.execute(
+                select(
+                    ScoreComponent.scoring_run_id,
+                    ScoreComponent.component_code,
+                    ScoreComponent.score,
+                    ScoreComponent.weight,
+                    ScoreComponent.explanation,
+                )
+                .where(
+                    ScoreComponent.scoring_run_id.in_(
+                        [row["id"] for row in scoring_run_rows]
+                    )
+                )
+                .order_by(ScoreComponent.id)
+            ).mappings().all()
 
         result = dict(opportunity)
         result["filters"] = [dict(row) for row in filters]
@@ -251,6 +273,13 @@ class OpportunityService:
                 **json.loads(row["details_json"] or "{}"),
             }
             for row in override_rows
+        ]
+        components_by_run: dict[int, list[dict[str, Any]]] = {}
+        for row in component_rows:
+            components_by_run.setdefault(row["scoring_run_id"], []).append(dict(row))
+        result["scoring_runs"] = [
+            {**dict(run), "components": components_by_run.get(run["id"], [])}
+            for run in scoring_run_rows
         ]
         return result
 

@@ -9,6 +9,7 @@ from fastapi.templating import Jinja2Templates
 
 from backend.models import EngagementType, OpportunityInput, RemoteStatus, TaxType
 from backend.services.opportunity_service import OpportunityService
+from backend.services.scoring_service import ScoringService
 
 
 router = APIRouter()
@@ -19,6 +20,14 @@ def _service(request: Request) -> OpportunityService:
     return OpportunityService(
         database=request.app.state.database,
         constitution=request.app.state.constitution,
+    )
+
+
+def _scoring_service(request: Request) -> ScoringService:
+    return ScoringService(
+        database=request.app.state.database,
+        constitution=request.app.state.constitution,
+        provider=request.app.state.scoring_provider,
     )
 
 
@@ -123,6 +132,20 @@ async def override_opportunity(
         service.override_lifecycle_status(
             opportunity_id, new_status, str(form.get("rationale", ""))
         )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    return RedirectResponse(url=f"/opportunities/{opportunity_id}", status_code=303)
+
+
+@router.post("/opportunities/{opportunity_id}/score")
+def score_opportunity(request: Request, opportunity_id: int) -> RedirectResponse:
+    service = _service(request)
+    if service.get_opportunity(opportunity_id) is None:
+        raise HTTPException(status_code=404, detail="opportunity not found")
+
+    try:
+        _scoring_service(request).score_opportunity(opportunity_id)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
