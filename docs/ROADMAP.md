@@ -9,9 +9,9 @@ The roadmap is directional rather than a promise of autonomous execution. Any ex
 ## Current status
 
 **Project phase:** v0.1 design baseline  
-**Completed:** design baseline, backend foundation, and manual opportunity vertical slice  
-**In progress:** v0.1 opportunity collection, filtering, scoring, and review workflow  
-**Next milestone:** first approved source adapter and repeatable collection in Issue #4
+**Completed:** design baseline, backend foundation, manual opportunity vertical slice, and the first source adapter (We Work Remotely RSS)  
+**In progress:** v0.1 deduplication, hard filters, scoring, and review workflow  
+**Next milestone:** the remaining Milestone 3 work — likely-duplicate detection beyond exact fingerprints, and an explicit, audited manual-override path — in Issue #5
 
 ## Definition of done
 
@@ -64,13 +64,16 @@ Completed in Issue #10.
 
 ### Milestone 2 — Collection and normalization
 
-- [ ] Define the source-adapter interface.
-- [ ] Implement the first approved opportunity source.
-- [ ] Preserve source attribution and ingestion history.
-- [ ] Normalize incoming records into the canonical model.
-- [ ] Make repeated collection idempotent.
+- [x] Define the source-adapter interface.
+- [x] Implement the first approved opportunity source.
+- [x] Preserve source attribution and ingestion history.
+- [x] Normalize incoming records into the canonical model.
+- [x] Make repeated collection idempotent.
 
-Tracked by Issue #4.
+Completed: first source is We Work Remotely's DevOps and Sysadmin RSS feed
+(`backend/adapters/we_work_remotely.py`), run via
+`python -m backend.cli collect we_work_remotely`
+(`OE-ADR-015`). Tracked by Issue #4.
 
 ### Milestone 3 — Deduplication and hard filters
 

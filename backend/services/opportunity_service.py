@@ -3,7 +3,6 @@
 import hashlib
 import json
 from dataclasses import asdict
-from datetime import datetime, timezone
 from typing import Any
 
 from sqlalchemy import select
@@ -20,12 +19,7 @@ from backend.db.models import (
 )
 from backend.models import OpportunityInput
 from backend.services.constitution_service import Constitution
-
-
-def _now_iso() -> str:
-    """Match schema.sql's `strftime('%Y-%m-%dT%H:%M:%fZ', 'now')` format."""
-    now = datetime.now(timezone.utc)
-    return now.strftime("%Y-%m-%dT%H:%M:%S.") + f"{now.microsecond:06d}Z"
+from backend.timeutil import now_iso
 
 
 class OpportunityService:
@@ -37,40 +31,81 @@ class OpportunityService:
 
     def create_manual(self, supplied: OpportunityInput) -> tuple[int, bool]:
         """Normalize, deduplicate, filter, and persist a manual opportunity."""
+        with self.database.session() as session:
+            source_id = self.ensure_source(session, "Manual entry", "manual", None)
+            return self._ingest(
+                session, supplied, source_id=source_id, external_id=None, collection_run_id=None
+            )
+
+    def ingest_collected(
+        self,
+        session: Session,
+        supplied: OpportunityInput,
+        *,
+        source_id: int,
+        external_id: str,
+        collection_run_id: int,
+    ) -> tuple[int, bool]:
+        """Normalize, deduplicate, filter, and persist a collected opportunity.
+
+        Reuses the exact manual-entry fingerprint short-circuit: if the
+        normalized listing matches an already-known opportunity, no new
+        `source_record` is created here. Recording that repeat sighting as a
+        `deduplication_decisions` row is Milestone 3 scope.
+        """
+        return self._ingest(
+            session,
+            supplied,
+            source_id=source_id,
+            external_id=external_id,
+            collection_run_id=collection_run_id,
+        )
+
+    def _ingest(
+        self,
+        session: Session,
+        supplied: OpportunityInput,
+        *,
+        source_id: int,
+        external_id: str | None,
+        collection_run_id: int | None,
+    ) -> tuple[int, bool]:
         normalized = self._normalize(supplied)
         fingerprint = self._fingerprint(normalized)
         payload = json.dumps(asdict(normalized), sort_keys=True)
         payload_hash = hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
-        with self.database.session() as session:
-            existing_id = session.execute(
-                select(Opportunity.id).where(Opportunity.fingerprint == fingerprint)
-            ).scalar_one_or_none()
-            if existing_id is not None:
-                return int(existing_id), False
+        existing_id = session.execute(
+            select(Opportunity.id).where(Opportunity.fingerprint == fingerprint)
+        ).scalar_one_or_none()
+        if existing_id is not None:
+            return int(existing_id), False
 
-            try:
-                source_id = self._ensure_manual_source(session)
-                opportunity_row = self._insert_opportunity(session, normalized, fingerprint)
-                source_record_id = self._insert_source_record(
-                    session, source_id, normalized.source_url, payload, payload_hash
+        try:
+            opportunity_row = self._insert_opportunity(session, normalized, fingerprint)
+            source_record_id = self._insert_source_record(
+                session,
+                source_id,
+                normalized.source_url,
+                payload,
+                payload_hash,
+                external_id=external_id,
+                collection_run_id=collection_run_id,
+            )
+            session.add(
+                OpportunitySource(
+                    opportunity_id=opportunity_row.id,
+                    source_record_id=source_record_id,
+                    is_primary=1,
                 )
-                session.add(
-                    OpportunitySource(
-                        opportunity_id=opportunity_row.id,
-                        source_record_id=source_record_id,
-                        is_primary=1,
-                    )
-                )
-                lifecycle_status = self._evaluate_filters(
-                    session, opportunity_row.id, normalized
-                )
-                opportunity_row.lifecycle_status = lifecycle_status
-                opportunity_row.updated_at = _now_iso()
-                session.commit()
-            except Exception:
-                session.rollback()
-                raise
+            )
+            lifecycle_status = self._evaluate_filters(session, opportunity_row.id, normalized)
+            opportunity_row.lifecycle_status = lifecycle_status
+            opportunity_row.updated_at = now_iso()
+            session.commit()
+        except Exception:
+            session.rollback()
+            raise
 
         return opportunity_row.id, True
 
@@ -164,15 +199,14 @@ class OpportunityService:
         return hashlib.sha256(identity.encode("utf-8")).hexdigest()
 
     @staticmethod
-    def _ensure_manual_source(session: Session) -> int:
+    def ensure_source(session: Session, name: str, source_type: str, base_url: str | None) -> int:
+        """Return the id of a `sources` row, creating it if it doesn't exist yet."""
         session.execute(
             sqlite_insert(Source)
-            .values(name="Manual entry", source_type="manual", base_url=None)
+            .values(name=name, source_type=source_type, base_url=base_url)
             .on_conflict_do_nothing(index_elements=["name"])
         )
-        return session.execute(
-            select(Source.id).where(Source.name == "Manual entry")
-        ).scalar_one()
+        return session.execute(select(Source.id).where(Source.name == name)).scalar_one()
 
     @staticmethod
     def _insert_opportunity(
@@ -210,13 +244,18 @@ class OpportunityService:
         source_url: str,
         payload: str,
         payload_hash: str,
+        *,
+        external_id: str | None = None,
+        collection_run_id: int | None = None,
     ) -> int:
         row = SourceRecord(
             source_id=source_id,
+            collection_run_id=collection_run_id,
+            external_id=external_id,
             canonical_url=source_url or None,
             payload_hash=payload_hash,
             raw_payload_json=payload,
-            retrieved_at=_now_iso(),
+            retrieved_at=now_iso(),
         )
         session.add(row)
         session.flush()
@@ -257,7 +296,7 @@ class OpportunityService:
             ),
         ]
 
-        correlation_id = f"manual-opportunity-{opportunity_id}"
+        correlation_id = f"opportunity-{opportunity_id}-hard-filters"
         for rule_code, outcome, evidence, explanation in evaluations:
             session.add(
                 FilterEvaluation(

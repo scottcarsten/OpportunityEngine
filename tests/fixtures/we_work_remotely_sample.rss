@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:media="http://search.yahoo.com/mrss">
+  <channel>
+    <title>We Work Remotely: DevOps and Sysadmin Jobs</title>
+    <link>https://weworkremotely.com/categories/remote-devops-sysadmin-jobs.rss</link>
+    <description>We Work Remotely: DevOps and Sysadmin Jobs</description>
+    <language>en-US</language>
+    <ttl>60</ttl>
+    <item>
+      <title>Acme Corp: Senior Cloud Administrator</title>
+      <region>Anywhere in the World</region>
+      <country></country>
+      <state></state>
+      <skills></skills>
+      <category>DevOps and Sysadmin</category>
+      <type>Contract</type>
+      <description>&lt;p&gt;&lt;strong&gt;About Acme:&lt;/strong&gt; We run &lt;em&gt;infrastructure&lt;/em&gt; at scale.&lt;/p&gt;&lt;ul&gt;&lt;li&gt;Manage Azure and AWS&lt;/li&gt;&lt;li&gt;Own identity and access&lt;/li&gt;&lt;/ul&gt;</description>
+      <pubDate>Mon, 03 Aug 2026 07:30:43 +0000</pubDate>
+      <expires_at>Wed, 02 Sep 2026 07:30:43 +0000</expires_at>
+      <guid>https://weworkremotely.com/remote-jobs/acme-corp-senior-cloud-administrator</guid>
+      <link>https://weworkremotely.com/remote-jobs/acme-corp-senior-cloud-administrator</link>
+    </item>
+    <item>
+      <title>Overseas Logistics Coordinator</title>
+      <region>Anywhere in the World</region>
+      <country></country>
+      <state></state>
+      <skills></skills>
+      <category>DevOps and Sysadmin</category>
+      <type>Full-Time</type>
+      <description>&lt;p&gt;No colon in this title on purpose, to test the fallback path.&lt;/p&gt;</description>
+      <pubDate>Tue, 04 Aug 2026 09:00:00 +0000</pubDate>
+      <expires_at>Thu, 03 Sep 2026 09:00:00 +0000</expires_at>
+      <guid>https://weworkremotely.com/remote-jobs/overseas-logistics-coordinator</guid>
+      <link>https://weworkremotely.com/remote-jobs/overseas-logistics-coordinator</link>
+    </item>
+  </channel>
+</rss>

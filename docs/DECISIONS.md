@@ -362,3 +362,66 @@ physical design; it is no longer executed at runtime.
   `op.execute()` edits.
 - `Settings.schema_path` and `Database`'s `schema_path` parameter were
   removed as dead configuration once migrations took over schema creation.
+
+---
+
+## OE-ADR-015 — First source adapter: We Work Remotely RSS
+
+**Status:** Accepted
+**Date:** 2026-08-05
+**Approved by:** Scott Carsten (source selection)
+
+### Context
+
+Milestone 2 (`docs/ROADMAP.md`, Issue #4) called for a source-adapter
+interface and one approved opportunity source, per `OE-ADR-013`'s "one
+source adapter only after the manual vertical slice works." Scott chose We
+Work Remotely's DevOps and Sysadmin RSS feed: publicly syndicated for this
+purpose, no API key, and its category matches the infrastructure/sysadmin
+focus in `config/constitution.json`.
+
+### Decision
+
+- `backend/adapters/base.py` defines the adapter contract: a
+  `RawOpportunityRecord` (external id, canonical URL, retrieval time, raw
+  payload) plus a `SourceAdapter` protocol with `fetch()` and `normalize()`
+  as two explicit stages, matching `docs/ARCHITECTURE.md` §5's pipeline —
+  adapters preserve raw evidence without interpreting it; normalization
+  maps that evidence into the canonical `OpportunityInput` model.
+- `backend/adapters/we_work_remotely.py` implements it using stdlib
+  `xml.etree.ElementTree` (verified against the live feed; no new XML
+  dependency needed) and strips HTML from descriptions via stdlib
+  `html.parser` rather than rendering untrusted external markup, per
+  `OE-ADR-011` and the architecture's "escape rendered content" rule.
+  Fields the feed doesn't publish (compensation, tax type,
+  travel/relocation/clearance/full-time-replacement) are left `unknown`/
+  `None`, which the existing hard-filter logic already routes to
+  `manual_review` rather than auto-approving.
+- `OpportunityService.create_manual` was refactored so manual entry and
+  automated collection share one fingerprint/filter/persist path
+  (`_ingest`), instead of two implementations that could drift apart.
+- `backend/services/collection_service.py` orchestrates one adapter run and
+  relies on the schema's existing `uq_source_records_source_external`
+  constraint for idempotency: a listing already seen from a source (same
+  external id) only bumps `last_seen_at`.
+- `backend/cli.py` (`python -m backend.cli collect we_work_remotely`) is
+  the manual, repeatable entry point required by `OE-ADR-010`; no
+  cron/systemd scheduling yet.
+
+### Explicit scope boundary
+
+If a collected listing's fingerprint matches an already-known opportunity,
+this milestone reuses the exact manual-entry short-circuit (return the
+existing id, create no new `source_record`). Recording that repeat sighting
+as a `deduplication_decisions` row is Milestone 3 (Issue #5) work, not this
+one's.
+
+### Consequences
+
+- Auto-collected opportunities flow through the same
+  `list_opportunities()`/`get_opportunity()` dict contract as manual
+  entries, so no template changes were needed.
+- A second adapter can be added by implementing `SourceAdapter` and
+  registering it in `backend/cli.py`'s `ADAPTERS` map.
+- Milestone 3's likely-duplicate detection and audited manual-override path
+  remain open.
