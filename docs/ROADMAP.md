@@ -8,10 +8,10 @@ The roadmap is directional rather than a promise of autonomous execution. Any ex
 
 ## Current status
 
-**Project phase:** v0.1 design baseline  
-**Completed:** design baseline, backend foundation, manual opportunity vertical slice, the first source adapter (We Work Remotely RSS), deduplication/hard-filter overrides (Milestone 3), and Claude Opus 5-backed explainable scoring (Milestone 4)  
-**In progress:** v0.1 review workflow  
-**Next milestone:** Milestone 5 (review inbox) in Issue #8 — note the opportunity detail page already shows filters, score components, fit, and concerns/history from Milestones 3–4; what's still missing is surfacing the source explicitly, the shortlist/reject/defer/request-preparation decision workflow, and internal notifications
+**Project phase:** v0.1 MVP complete  
+**Completed:** all of v0.1 — design baseline, backend foundation, manual opportunity vertical slice, the first source adapter (We Work Remotely RSS), deduplication/hard-filter overrides (Milestone 3), Claude Opus 5-backed explainable scoring (Milestone 4), and the review inbox (Milestone 5)  
+**In progress:** nothing active — v0.1's MVP outcome is reached  
+**Next milestone:** v0.2 (application preparation, Issue #7) — importing a versioned master résumé and generating tailored résumé/cover-letter/fit-report drafts, still with no external action
 
 ## Definition of done
 
@@ -111,15 +111,22 @@ See `OE-ADR-017`. Tracked by Issue #6.
 
 ### Milestone 5 — Review inbox
 
-- [ ] List newly qualified opportunities.
-- [ ] Show source, filters, score components, fit, concerns, and history.
-- [ ] Allow Scott to shortlist, reject, defer, or request preparation.
-- [ ] Record every decision in the audit log.
-- [ ] Add internal notifications for items needing review.
+- [x] List newly qualified opportunities.
+- [x] Show source, filters, score components, fit, concerns, and history.
+- [x] Allow Scott to shortlist, reject, defer, or request preparation.
+- [x] Record every decision in the audit log.
+- [x] Add internal notifications for items needing review.
 
-Tracked by Issue #8.
+Review decisions (`OpportunityService.record_review_decision`) move
+`lifecycle_status` into the schema's own dedicated states
+(`shortlisted`/`deferred`/`rejected`/`preparing`) and are always audited.
+Internal notifications (`notifications` table) are created once, at ingest,
+for anything landing in `eligible` or `new`; the dashboard shows a pending
+count, and viewing an opportunity marks its notification sent. The detail
+page now also shows its source (`sources`/`source_records`). See
+`OE-ADR-018`. Tracked by Issue #8.
 
-**v0.1 MVP outcome:** Scott can open a local dashboard, review normalized opportunities, understand why each passed or failed, and control every next step.
+**v0.1 MVP outcome reached:** Scott can open a local dashboard, review normalized opportunities, understand why each passed or failed, and control every next step.
 
 ## v0.2 — Application preparation
 

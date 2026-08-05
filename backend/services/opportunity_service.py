@@ -6,7 +6,7 @@ from dataclasses import asdict
 from difflib import SequenceMatcher
 from typing import Any, Literal
 
-from sqlalchemy import select
+from sqlalchemy import func, select, update
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.orm import Session
 
@@ -15,8 +15,10 @@ from backend.db.models import (
     AuditEventRecord,
     DeduplicationDecision,
     FilterEvaluation,
+    Notification,
     Opportunity,
     OpportunitySource,
+    ReviewDecision,
     ScoreComponent,
     ScoringRun,
     Source,
@@ -33,6 +35,17 @@ from backend.timeutil import now_iso
 # 0.85+ similarity is almost always a repost or near-duplicate rather than
 # a genuinely different role with a shared boilerplate "About us" section.
 _LIKELY_DUPLICATE_THRESHOLD = 0.85
+
+# Per OE-ADR-018: a review decision is Scott's own judgment call, so unlike
+# the Milestone 3 hard-filter override it drives lifecycle_status directly
+# into the dedicated review states the schema already defines.
+_REVIEW_DECISION_STATUS = {
+    "shortlist": "shortlisted",
+    "reject": "rejected",
+    "defer": "deferred",
+    "request_preparation": "preparing",
+    "reopen": "eligible",
+}
 
 
 class OpportunityService:
@@ -116,6 +129,23 @@ class OpportunityService:
             lifecycle_status = self._evaluate_filters(session, opportunity_row.id, normalized)
             opportunity_row.lifecycle_status = lifecycle_status
             opportunity_row.updated_at = now_iso()
+            if lifecycle_status in ("eligible", "new"):
+                # Created once, at ingest, not on every later status change -
+                # a re-decision is already visible in that opportunity's own
+                # review-decision history (OE-ADR-018).
+                session.add(
+                    Notification(
+                        opportunity_id=opportunity_row.id,
+                        notification_type="opportunity_needs_review",
+                        channel="dashboard",
+                        subject=f"Review needed: {opportunity_row.title}",
+                        body=(
+                            f"\"{opportunity_row.title}\" at "
+                            f"{opportunity_row.organization_name or 'an unspecified organization'} "
+                            f"is {lifecycle_status} and awaiting your review."
+                        ),
+                    )
+                )
             session.commit()
         except Exception:
             session.rollback()
@@ -170,6 +200,87 @@ class OpportunityService:
             except Exception:
                 session.rollback()
                 raise
+
+    def record_review_decision(
+        self,
+        opportunity_id: int,
+        decision: Literal["shortlist", "reject", "defer", "request_preparation", "reopen"],
+        rationale: str | None = None,
+        actor: str = "scott",
+    ) -> None:
+        """Record Scott's review decision and move lifecycle_status accordingly.
+
+        Per ARCHITECTURE.md §5.6, the review queue presents evidence; Scott
+        decides. No transition is blocked — he can re-shortlist something
+        already rejected. See `OE-ADR-018`.
+        """
+        new_status = _REVIEW_DECISION_STATUS.get(decision)
+        if new_status is None:
+            raise ValueError(f"unsupported review decision: {decision}")
+
+        with self.database.session() as session:
+            opportunity = session.execute(
+                select(Opportunity).where(Opportunity.id == opportunity_id)
+            ).scalar_one_or_none()
+            if opportunity is None:
+                raise ValueError(f"opportunity not found: {opportunity_id}")
+
+            try:
+                previous_status = opportunity.lifecycle_status
+                opportunity.lifecycle_status = new_status
+                opportunity.updated_at = now_iso()
+                session.add(
+                    ReviewDecision(
+                        opportunity_id=opportunity_id,
+                        decision=decision,
+                        actor=actor,
+                        rationale=rationale or None,
+                    )
+                )
+                AuditService(session).record(
+                    AuditEvent(
+                        event_type="review_decision",
+                        actor_type="scott",
+                        entity_type="opportunity",
+                        entity_id=opportunity_id,
+                        constitution_version=self.constitution.version,
+                        summary=(
+                            f"Recorded review decision '{decision}': "
+                            f"status now {new_status}."
+                        ),
+                        details={
+                            "decision": decision,
+                            "previous_status": previous_status,
+                            "new_status": new_status,
+                            "rationale": rationale,
+                        },
+                    )
+                )
+            except Exception:
+                session.rollback()
+                raise
+
+    def mark_notifications_sent(self, opportunity_id: int) -> None:
+        """Mark this opportunity's queued notifications as sent (viewed)."""
+        with self.database.session() as session:
+            session.execute(
+                update(Notification)
+                .where(
+                    Notification.opportunity_id == opportunity_id,
+                    Notification.status == "queued",
+                )
+                .values(status="sent", sent_at=now_iso())
+            )
+            session.commit()
+
+    def count_pending_review(self) -> int:
+        """Count opportunities with a queued internal notification."""
+        with self.database.session() as session:
+            return session.execute(
+                select(func.count())
+                .select_from(Notification)
+                .where(Notification.status == "queued")
+            ).scalar_one()
 
     def list_opportunities(self) -> list[dict[str, Any]]:
         """Return opportunities newest first for the review inbox."""
@@ -260,8 +371,37 @@ class OpportunityService:
                 )
                 .order_by(ScoreComponent.id)
             ).mappings().all()
+            source_row = session.execute(
+                select(
+                    Source.name,
+                    Source.source_type,
+                    SourceRecord.canonical_url,
+                    SourceRecord.retrieved_at,
+                )
+                .join(SourceRecord, SourceRecord.source_id == Source.id)
+                .join(
+                    OpportunitySource,
+                    OpportunitySource.source_record_id == SourceRecord.id,
+                )
+                .where(
+                    OpportunitySource.opportunity_id == opportunity_id,
+                    OpportunitySource.is_primary == 1,
+                )
+            ).mappings().first()
+            review_decision_rows = session.execute(
+                select(
+                    ReviewDecision.decision,
+                    ReviewDecision.actor,
+                    ReviewDecision.rationale,
+                    ReviewDecision.created_at,
+                )
+                .where(ReviewDecision.opportunity_id == opportunity_id)
+                .order_by(ReviewDecision.id.desc())
+            ).mappings().all()
 
         result = dict(opportunity)
+        result["source"] = dict(source_row) if source_row is not None else None
+        result["review_decisions"] = [dict(row) for row in review_decision_rows]
         result["filters"] = [dict(row) for row in filters]
         result["likely_duplicates"] = [dict(row) for row in retained_side] + [
             dict(row) for row in duplicate_side

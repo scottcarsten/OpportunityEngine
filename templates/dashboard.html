@@ -8,6 +8,13 @@
   </div>
 </div>
 
+{% if needs_review_count %}
+<div class="alert alert-info">
+  {{ needs_review_count }} opportunit{{ "y" if needs_review_count == 1 else "ies" }}
+  need{{ "s" if needs_review_count == 1 else "" }} your review.
+</div>
+{% endif %}
+
 {% if opportunities %}
 <div class="table-responsive bg-white border rounded">
   <table class="table table-hover align-middle mb-0">
@@ -41,6 +48,14 @@
             <span class="badge text-bg-success">Eligible</span>
           {% elif opportunity.lifecycle_status == "ineligible" %}
             <span class="badge text-bg-danger">Ineligible</span>
+          {% elif opportunity.lifecycle_status == "shortlisted" %}
+            <span class="badge text-bg-primary">Shortlisted</span>
+          {% elif opportunity.lifecycle_status == "deferred" %}
+            <span class="badge text-bg-secondary">Deferred</span>
+          {% elif opportunity.lifecycle_status == "rejected" %}
+            <span class="badge text-bg-dark">Rejected</span>
+          {% elif opportunity.lifecycle_status == "preparing" %}
+            <span class="badge text-bg-info">Preparing</span>
           {% else %}
             <span class="badge text-bg-warning">Manual review</span>
           {% endif %}

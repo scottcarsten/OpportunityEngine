@@ -558,3 +558,68 @@ real per-opportunity cost is roughly $0.02–0.06 at Opus 5 rates.
   vendor entirely) is a new class implementing `ScoringProvider`, wired in
   at the same `app.state.scoring_provider` assignment — no changes to
   `ScoringService`, the route, or the template.
+
+---
+
+## OE-ADR-018 — Review decisions drive lifecycle_status; notifications are ingest-time only
+
+**Status:** Accepted
+**Date:** 2026-08-06
+
+### Context
+
+Milestone 5 (review inbox, Issue #8) needed a real decision workflow on top
+of what Milestones 3–4 already exposed (filters, likely-duplicate/override
+history, fit scores). Two tables from the original schema design had sat
+unused since Milestone 0, in the same position `AuditService` was in before
+Milestone 3: `review_decisions` and `notifications`.
+
+### Decision
+
+- `OpportunityService.record_review_decision(opportunity_id, decision,
+  rationale=None, actor="scott")` maps each decision directly onto the
+  schema's own dedicated `lifecycle_status` states, since a review decision
+  *is* Scott's own judgment call (unlike the Milestone 3 override, which
+  deliberately stayed scoped to `eligible`/`ineligible` because it was
+  correcting a hard-filter judgment, not replacing it):
+
+  | Decision | New `lifecycle_status` |
+  |---|---|
+  | `shortlist` | `shortlisted` |
+  | `reject` | `rejected` |
+  | `defer` | `deferred` |
+  | `request_preparation` | `preparing` |
+  | `reopen` | `eligible` |
+
+  Every decision writes one `ReviewDecision` row and one `AuditEvent`
+  (`event_type="review_decision"`) — the same audited-decision pattern
+  `OE-ADR-016`'s override established. Rationale is optional here (the
+  override's is required) — a quick shortlist/reject click shouldn't
+  demand a written reason. No transition is blocked: Scott can move any
+  opportunity between any of these states at any time, including
+  re-deciding something already rejected.
+- `_ingest()` creates one `Notification` row (`notification_type=
+  "opportunity_needs_review"`, `channel="dashboard"`) whenever the result is
+  `eligible` or `new` — **once, at ingest, not on every later status
+  change.** A `reopen`/`reject`/etc. is already visible in that
+  opportunity's own review-decision history; a second notification would
+  just be noise. `record_review_decision` does not create notifications.
+- The dashboard shows a count of `status="queued"` notifications; viewing
+  an opportunity's detail page marks its notifications `sent` — a
+  mark-as-read-on-view, implemented in the route layer so
+  `get_opportunity()` itself stays a pure read.
+- `get_opportunity()` now also joins `opportunity_sources` (primary) →
+  `source_records` → `sources`, closing the one Milestone 5 item that
+  wasn't already incidentally satisfied by Milestones 3–4.
+
+### Consequences
+
+- v0.1's stated MVP outcome is reached: Scott can open the dashboard,
+  review normalized opportunities, understand why each passed or failed,
+  and control every next step — filters, dedup, overrides, scores, source,
+  and now decisions and notifications are all visible on one page.
+- `templates/opportunity_detail.html` and `templates/dashboard.html` badge
+  logic now distinguishes `shortlisted`/`deferred`/`rejected`/`preparing`
+  instead of lumping every non-eligible/ineligible status into "Manual
+  review".
+- v0.2 (application preparation, Issue #7) is next.

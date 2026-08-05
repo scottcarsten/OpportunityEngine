@@ -27,6 +27,14 @@
     <span class="badge text-bg-success fs-6">Eligible</span>
   {% elif opportunity.lifecycle_status == "ineligible" %}
     <span class="badge text-bg-danger fs-6">Ineligible</span>
+  {% elif opportunity.lifecycle_status == "shortlisted" %}
+    <span class="badge text-bg-primary fs-6">Shortlisted</span>
+  {% elif opportunity.lifecycle_status == "deferred" %}
+    <span class="badge text-bg-secondary fs-6">Deferred</span>
+  {% elif opportunity.lifecycle_status == "rejected" %}
+    <span class="badge text-bg-dark fs-6">Rejected</span>
+  {% elif opportunity.lifecycle_status == "preparing" %}
+    <span class="badge text-bg-info fs-6">Preparing</span>
   {% else %}
     <span class="badge text-bg-warning fs-6">Manual review</span>
   {% endif %}
@@ -49,6 +57,15 @@
         <dd class="col-sm-8">{{ opportunity.location_text or "Not supplied" }}</dd>
         <dt class="col-sm-4">Schedule</dt>
         <dd class="col-sm-8">{{ opportunity.schedule_text or "Not supplied" }}</dd>
+        <dt class="col-sm-4">Source</dt>
+        <dd class="col-sm-8">
+          {% if opportunity.source %}
+            {{ opportunity.source.name }} ({{ opportunity.source.source_type }}),
+            retrieved {{ opportunity.source.retrieved_at }}
+          {% else %}
+            Unknown
+          {% endif %}
+        </dd>
       </dl>
       {% if opportunity.canonical_url %}
       <a href="{{ opportunity.canonical_url }}" target="_blank"
@@ -166,6 +183,43 @@
           {{ run.status|title }}{% if run.overall_score is not none %} &middot; {{ "%.0f"|format(run.overall_score) }}/100{% endif %}
         </div>
         <div class="text-secondary">{{ run.started_at }}</div>
+      </div>
+      {% endfor %}
+      {% endif %}
+    </section>
+    <section class="bg-white border rounded p-4 mt-4">
+      <h2 class="h4">Review decision</h2>
+      <p class="small text-secondary">
+        The review queue presents evidence &mdash; you decide. Any decision
+        can be revisited later.
+      </p>
+      <form method="post" action="/opportunities/{{ opportunity.id }}/review">
+        <div class="mb-3">
+          <label class="form-label small" for="review-rationale">
+            Rationale (optional)
+          </label>
+          <textarea class="form-control" id="review-rationale" name="rationale" rows="2"></textarea>
+        </div>
+        <button type="submit" name="decision" value="shortlist"
+                class="btn btn-sm btn-outline-primary">Shortlist</button>
+        <button type="submit" name="decision" value="defer"
+                class="btn btn-sm btn-outline-secondary">Defer</button>
+        <button type="submit" name="decision" value="reject"
+                class="btn btn-sm btn-outline-dark">Reject</button>
+        <button type="submit" name="decision" value="request_preparation"
+                class="btn btn-sm btn-outline-info">Request preparation</button>
+        <button type="submit" name="decision" value="reopen"
+                class="btn btn-sm btn-outline-success">Reopen</button>
+      </form>
+      {% if opportunity.review_decisions %}
+      <h3 class="h6 mt-4">Decision history</h3>
+      {% for review in opportunity.review_decisions %}
+      <div class="border-top py-2 small">
+        <div>{{ review.decision|replace("_", " ")|title }} by {{ review.actor }}</div>
+        {% if review.rationale %}
+        <div class="text-secondary">{{ review.rationale }}</div>
+        {% endif %}
+        <div class="text-secondary">{{ review.created_at }}</div>
       </div>
       {% endfor %}
       {% endif %}

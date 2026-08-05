@@ -132,7 +132,7 @@ pyproject.toml
 
 ## Status
 
-🚧 **v0.1 development**
+✅ **v0.1 MVP complete**
 
 Working today:
 
@@ -151,7 +151,10 @@ Working today:
 - Explainable, advisory fit scoring via the Claude API (Opus 5) for
   opportunities that already passed hard filters — never authorizes any
   action, and never changes an opportunity's eligibility
-- Review inbox and detailed filter explanations
+- A review inbox: shortlist/reject/defer/request-preparation decisions
+  (always audited), internal notifications for anything needing review,
+  and the opportunity's source shown alongside its filters, score, and
+  full decision history
 - Automated test suite and GitHub Actions CI
 
 Not implemented yet:

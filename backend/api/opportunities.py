@@ -33,10 +33,14 @@ def _scoring_service(request: Request) -> ScoringService:
 
 @router.get("/", response_class=HTMLResponse)
 def dashboard(request: Request) -> HTMLResponse:
+    service = _service(request)
     return templates.TemplateResponse(
         request=request,
         name="dashboard.html",
-        context={"opportunities": _service(request).list_opportunities()},
+        context={
+            "opportunities": service.list_opportunities(),
+            "needs_review_count": service.count_pending_review(),
+        },
     )
 
 
@@ -105,9 +109,11 @@ async def create_opportunity(request: Request) -> RedirectResponse:
 def opportunity_detail(
     request: Request, opportunity_id: int, duplicate: int = 0
 ) -> HTMLResponse:
-    opportunity = _service(request).get_opportunity(opportunity_id)
+    service = _service(request)
+    opportunity = service.get_opportunity(opportunity_id)
     if opportunity is None:
         raise HTTPException(status_code=404, detail="opportunity not found")
+    service.mark_notifications_sent(opportunity_id)
     return templates.TemplateResponse(
         request=request,
         name="opportunity_detail.html",
@@ -132,6 +138,29 @@ async def override_opportunity(
         service.override_lifecycle_status(
             opportunity_id, new_status, str(form.get("rationale", ""))
         )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    return RedirectResponse(url=f"/opportunities/{opportunity_id}", status_code=303)
+
+
+@router.post("/opportunities/{opportunity_id}/review")
+async def review_opportunity(request: Request, opportunity_id: int) -> RedirectResponse:
+    service = _service(request)
+    if service.get_opportunity(opportunity_id) is None:
+        raise HTTPException(status_code=404, detail="opportunity not found")
+
+    form = await request.form()
+    try:
+        decision = cast(
+            Literal["shortlist", "reject", "defer", "request_preparation", "reopen"],
+            _choice(
+                str(form.get("decision", "")),
+                {"shortlist", "reject", "defer", "request_preparation", "reopen"},
+            ),
+        )
+        rationale = str(form.get("rationale", "")).strip() or None
+        service.record_review_decision(opportunity_id, decision, rationale)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
