@@ -77,12 +77,18 @@ Completed: first source is We Work Remotely's DevOps and Sysadmin RSS feed
 
 ### Milestone 3 — Deduplication and hard filters
 
-- [ ] Generate deterministic opportunity fingerprints.
-- [ ] Detect exact and likely duplicates.
-- [ ] Enforce remote-only, no-travel, no-relocation, no-clearance, and no-full-time-replacement rules.
-- [ ] Store every filter decision and explanation.
+- [x] Generate deterministic opportunity fingerprints.
+- [x] Detect exact duplicates via deterministic fingerprints.
+- [ ] Detect likely duplicates via similarity review.
+- [x] Enforce remote-only, no-travel, no-relocation, no-clearance, and no-full-time-replacement rules.
+- [x] Store every filter decision and explanation.
 - [ ] Provide a manual override path that is explicit and audited.
 
+Fingerprinting, exact-duplicate short-circuiting, hard-filter enforcement,
+and filter-decision storage were already delivered in Milestones 1A/2
+(`OpportunityService._fingerprint`/`_evaluate_filters`, shared by manual
+entry and collection). Remaining: likely-duplicate detection beyond exact
+fingerprint matches, and an explicit, audited manual-override path.
 Tracked by Issue #5.
 
 ### Milestone 4 — Explainable scoring
