@@ -14,7 +14,6 @@ from backend.config import Settings
 def client(tmp_path: Path) -> TestClient:
     settings = Settings(
         database_path=tmp_path / "opportunity_engine.db",
-        schema_path=Path("database/schema.sql"),
         constitution_path=Path("config/constitution.json"),
     )
     with TestClient(create_app(settings)) as test_client:

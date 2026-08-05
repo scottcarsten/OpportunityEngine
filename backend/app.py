@@ -22,10 +22,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         configure_logging(resolved_settings.log_level)
         constitution = load_constitution(resolved_settings.constitution_path)
-        database = Database(
-            database_path=resolved_settings.database_path,
-            schema_path=resolved_settings.schema_path,
-        )
+        database = Database(database_path=resolved_settings.database_path)
         database.initialize()
 
         app.state.settings = resolved_settings

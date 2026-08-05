@@ -1,10 +1,13 @@
 """Append-only audit-event writer."""
 
 import json
-import sqlite3
 from dataclasses import dataclass
 from typing import Any
 from uuid import uuid4
+
+from sqlalchemy.orm import Session
+
+from backend.db.models import AuditEventRecord
 
 
 @dataclass(frozen=True)
@@ -23,39 +26,22 @@ class AuditEvent:
 class AuditService:
     """Persist audit events without update or delete operations."""
 
-    def __init__(self, connection: sqlite3.Connection) -> None:
-        self.connection = connection
+    def __init__(self, session: Session) -> None:
+        self.session = session
 
     def record(self, event: AuditEvent) -> int:
         """Append one audit event and return its database identifier."""
-        correlation_id = event.correlation_id or str(uuid4())
-        cursor = self.connection.execute(
-            """
-            INSERT INTO audit_events (
-                correlation_id,
-                event_type,
-                actor_type,
-                actor_identifier,
-                entity_type,
-                entity_id,
-                constitution_version,
-                summary,
-                details_json
-            )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            (
-                correlation_id,
-                event.event_type,
-                event.actor_type,
-                event.actor_identifier,
-                event.entity_type,
-                event.entity_id,
-                event.constitution_version,
-                event.summary,
-                json.dumps(event.details) if event.details is not None else None,
-            ),
+        row = AuditEventRecord(
+            correlation_id=event.correlation_id or str(uuid4()),
+            event_type=event.event_type,
+            actor_type=event.actor_type,
+            actor_identifier=event.actor_identifier,
+            entity_type=event.entity_type,
+            entity_id=event.entity_id,
+            constitution_version=event.constitution_version,
+            summary=event.summary,
+            details_json=json.dumps(event.details) if event.details is not None else None,
         )
-        self.connection.commit()
-        return int(cursor.lastrowid)
-
+        self.session.add(row)
+        self.session.commit()
+        return int(row.id)

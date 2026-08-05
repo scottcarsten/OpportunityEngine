@@ -7,6 +7,11 @@
 --
 -- Timestamps are stored as UTC ISO-8601 text. Application code must keep
 -- transactions short and treat historical evaluation/audit rows as immutable.
+--
+-- Retained as human-readable documentation of the physical design. The
+-- applied source of truth is now the Alembic migrations in
+-- `database/migrations/` (see `backend/db/models.py` for the corresponding
+-- SQLAlchemy ORM models); this file is no longer executed at runtime.
 
 PRAGMA foreign_keys = ON;
 

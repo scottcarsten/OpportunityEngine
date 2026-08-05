@@ -58,6 +58,7 @@ OpportunityEngine/
 README.md
 LICENSE
 .gitignore
+alembic.ini
 
 docs/
 architecture/
@@ -66,7 +67,7 @@ frontend/
 config/
 tests/
 docker/
-database/
+database/       # schema.sql (reference) + migrations/ (applied schema)
 templates/
 
 requirements.txt
@@ -136,7 +137,8 @@ pyproject.toml
 Working today:
 
 - Localhost-only FastAPI application
-- SQLite initialization and constitutional safeguards
+- SQLAlchemy models and Alembic-managed database migrations, with SQLite
+  constitutional safeguards enforced as triggers
 - Manual opportunity entry
 - Deterministic deduplication and hard-filter evaluation
 - Review inbox and detailed filter explanations

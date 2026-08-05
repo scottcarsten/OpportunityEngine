@@ -318,3 +318,47 @@ v0.1 does not apply for work, send email or external messages, generate or modif
 - The constitution is validated at startup and failure prevents readiness.
 - The first implementation milestone establishes configuration, persistence, audit, health, testing, and CI foundations.
 - New external capabilities require a separate decision and explicit approval.
+
+---
+
+## OE-ADR-014 — Adopt SQLAlchemy and Alembic for persistence
+
+**Status:** Accepted
+**Date:** 2026-08-05
+
+### Context
+
+Milestone 1 of `docs/ROADMAP.md` called for SQLAlchemy models and migrations
+based on `database/schema.sql`, but the initial implementation used a raw
+`sqlite3` connection with `database/schema.sql` applied once via
+`executescript()`. This left the codebase inconsistent with
+`docs/ARCHITECTURE.md` §6, which already documented SQLAlchemy as the
+persistence layer, and left schema evolution without a real migration tool.
+
+### Decision
+
+Replace the raw-`sqlite3` layer with SQLAlchemy ORM models
+(`backend/db/models.py`) covering all sixteen tables in
+`database/schema.sql`, and adopt Alembic for migrations
+(`database/migrations/`). The initial migration (`0001_initial_schema`)
+transcribes the approved physical schema exactly, including the six
+constitutional-safeguard triggers (append-only audit and filter history,
+immutable master résumé, immutable completed scoring runs, approval-gated
+external notifications). SQLAlchemy has no DDL support for triggers, so
+these remain hand-written raw SQL inside the migration via `op.execute()`.
+`database/schema.sql` is retained as human-readable documentation of the
+physical design; it is no longer executed at runtime.
+
+### Consequences
+
+- Schema changes going forward are made as new Alembic migrations, not by
+  editing `database/schema.sql` in place.
+- `backend/database.py` runs `alembic upgrade head` at startup instead of
+  a one-time `executescript()`, which is naturally idempotent.
+- Service code (`OpportunityService`, `AuditService`) queries through
+  SQLAlchemy sessions rather than hand-written SQL strings.
+- Autogenerate (`alembic revision --autogenerate`) can assist with future
+  ordinary column/table changes, but triggers still require manual
+  `op.execute()` edits.
+- `Settings.schema_path` and `Database`'s `schema_path` parameter were
+  removed as dead configuration once migrations took over schema creation.

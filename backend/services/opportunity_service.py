@@ -2,13 +2,30 @@
 
 import hashlib
 import json
-import sqlite3
 from dataclasses import asdict
+from datetime import datetime, timezone
 from typing import Any
 
+from sqlalchemy import select
+from sqlalchemy.dialects.sqlite import insert as sqlite_insert
+from sqlalchemy.orm import Session
+
 from backend.database import Database
+from backend.db.models import (
+    FilterEvaluation,
+    Opportunity,
+    OpportunitySource,
+    Source,
+    SourceRecord,
+)
 from backend.models import OpportunityInput
 from backend.services.constitution_service import Constitution
+
+
+def _now_iso() -> str:
+    """Match schema.sql's `strftime('%Y-%m-%dT%H:%M:%fZ', 'now')` format."""
+    now = datetime.now(timezone.utc)
+    return now.strftime("%Y-%m-%dT%H:%M:%S.") + f"{now.microsecond:06d}Z"
 
 
 class OpportunityService:
@@ -25,89 +42,74 @@ class OpportunityService:
         payload = json.dumps(asdict(normalized), sort_keys=True)
         payload_hash = hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
-        with self.database.locked_connection() as connection:
-            existing = connection.execute(
-                "SELECT id FROM opportunities WHERE fingerprint = ?",
-                (fingerprint,),
-            ).fetchone()
-            if existing is not None:
-                return int(existing["id"]), False
+        with self.database.session() as session:
+            existing_id = session.execute(
+                select(Opportunity.id).where(Opportunity.fingerprint == fingerprint)
+            ).scalar_one_or_none()
+            if existing_id is not None:
+                return int(existing_id), False
 
             try:
-                connection.execute("BEGIN")
-                source_id = self._ensure_manual_source(connection)
-                opportunity_id = self._insert_opportunity(
-                    connection, normalized, fingerprint
-                )
+                source_id = self._ensure_manual_source(session)
+                opportunity_row = self._insert_opportunity(session, normalized, fingerprint)
                 source_record_id = self._insert_source_record(
-                    connection, source_id, normalized.source_url, payload, payload_hash
+                    session, source_id, normalized.source_url, payload, payload_hash
                 )
-                connection.execute(
-                    """
-                    INSERT INTO opportunity_sources (
-                        opportunity_id, source_record_id, is_primary
+                session.add(
+                    OpportunitySource(
+                        opportunity_id=opportunity_row.id,
+                        source_record_id=source_record_id,
+                        is_primary=1,
                     )
-                    VALUES (?, ?, 1)
-                    """,
-                    (opportunity_id, source_record_id),
                 )
                 lifecycle_status = self._evaluate_filters(
-                    connection, opportunity_id, normalized
+                    session, opportunity_row.id, normalized
                 )
-                connection.execute(
-                    """
-                    UPDATE opportunities
-                    SET lifecycle_status = ?,
-                        updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
-                    WHERE id = ?
-                    """,
-                    (lifecycle_status, opportunity_id),
-                )
-                connection.commit()
+                opportunity_row.lifecycle_status = lifecycle_status
+                opportunity_row.updated_at = _now_iso()
+                session.commit()
             except Exception:
-                connection.rollback()
+                session.rollback()
                 raise
 
-        return opportunity_id, True
+        return opportunity_row.id, True
 
     def list_opportunities(self) -> list[dict[str, Any]]:
         """Return opportunities newest first for the review inbox."""
-        with self.database.locked_connection() as connection:
-            rows = connection.execute(
-                """
-                SELECT
-                    id,
-                    title,
-                    organization_name,
-                    remote_status,
-                    engagement_type,
-                    tax_type,
-                    lifecycle_status,
-                    created_at
-                FROM opportunities
-                ORDER BY created_at DESC, id DESC
-                """
-            ).fetchall()
+        with self.database.session() as session:
+            rows = session.execute(
+                select(
+                    Opportunity.id,
+                    Opportunity.title,
+                    Opportunity.organization_name,
+                    Opportunity.remote_status,
+                    Opportunity.engagement_type,
+                    Opportunity.tax_type,
+                    Opportunity.lifecycle_status,
+                    Opportunity.created_at,
+                ).order_by(Opportunity.created_at.desc(), Opportunity.id.desc())
+            ).mappings().all()
         return [dict(row) for row in rows]
 
     def get_opportunity(self, opportunity_id: int) -> dict[str, Any] | None:
         """Return one opportunity with its constitutional evaluations."""
-        with self.database.locked_connection() as connection:
-            opportunity = connection.execute(
-                "SELECT * FROM opportunities WHERE id = ?",
-                (opportunity_id,),
-            ).fetchone()
+        with self.database.session() as session:
+            opportunity = session.execute(
+                select(Opportunity.__table__).where(Opportunity.id == opportunity_id)
+            ).mappings().first()
             if opportunity is None:
                 return None
-            filters = connection.execute(
-                """
-                SELECT rule_code, outcome, evidence, explanation, evaluated_at
-                FROM filter_evaluations
-                WHERE opportunity_id = ?
-                ORDER BY id
-                """,
-                (opportunity_id,),
-            ).fetchall()
+            filters = session.execute(
+                select(
+                    FilterEvaluation.rule_code,
+                    FilterEvaluation.outcome,
+                    FilterEvaluation.evidence,
+                    FilterEvaluation.explanation,
+                    FilterEvaluation.evaluated_at,
+                )
+                .where(FilterEvaluation.opportunity_id == opportunity_id)
+                .order_by(FilterEvaluation.id)
+            ).mappings().all()
         result = dict(opportunity)
         result["filters"] = [dict(row) for row in filters]
         return result
@@ -162,99 +164,67 @@ class OpportunityService:
         return hashlib.sha256(identity.encode("utf-8")).hexdigest()
 
     @staticmethod
-    def _ensure_manual_source(connection: sqlite3.Connection) -> int:
-        connection.execute(
-            """
-            INSERT INTO sources (name, source_type, base_url)
-            VALUES ('Manual entry', 'manual', NULL)
-            ON CONFLICT(name) DO NOTHING
-            """
+    def _ensure_manual_source(session: Session) -> int:
+        session.execute(
+            sqlite_insert(Source)
+            .values(name="Manual entry", source_type="manual", base_url=None)
+            .on_conflict_do_nothing(index_elements=["name"])
         )
-        row = connection.execute(
-            "SELECT id FROM sources WHERE name = 'Manual entry'"
-        ).fetchone()
-        return int(row["id"])
+        return session.execute(
+            select(Source.id).where(Source.name == "Manual entry")
+        ).scalar_one()
 
     @staticmethod
     def _insert_opportunity(
-        connection: sqlite3.Connection,
+        session: Session,
         opportunity: OpportunityInput,
         fingerprint: str,
-    ) -> int:
-        cursor = connection.execute(
-            """
-            INSERT INTO opportunities (
-                fingerprint,
-                title,
-                organization_name,
-                description,
-                canonical_url,
-                location_text,
-                remote_status,
-                engagement_type,
-                tax_type,
-                schedule_text,
-                compensation_min,
-                compensation_max,
-                compensation_period,
-                requires_travel,
-                requires_relocation,
-                requires_clearance,
-                replaces_full_time_work
-            )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            (
-                fingerprint,
-                opportunity.title,
-                opportunity.organization_name or None,
-                opportunity.description,
-                opportunity.source_url or None,
-                opportunity.location_text or None,
-                opportunity.remote_status,
-                opportunity.engagement_type,
-                opportunity.tax_type,
-                opportunity.schedule_text or None,
-                opportunity.compensation_min,
-                opportunity.compensation_max,
-                opportunity.compensation_period,
-                opportunity.requires_travel,
-                opportunity.requires_relocation,
-                opportunity.requires_clearance,
-                opportunity.replaces_full_time_work,
-            ),
+    ) -> Opportunity:
+        row = Opportunity(
+            fingerprint=fingerprint,
+            title=opportunity.title,
+            organization_name=opportunity.organization_name or None,
+            description=opportunity.description,
+            canonical_url=opportunity.source_url or None,
+            location_text=opportunity.location_text or None,
+            remote_status=opportunity.remote_status,
+            engagement_type=opportunity.engagement_type,
+            tax_type=opportunity.tax_type,
+            schedule_text=opportunity.schedule_text or None,
+            compensation_min=opportunity.compensation_min,
+            compensation_max=opportunity.compensation_max,
+            compensation_period=opportunity.compensation_period,
+            requires_travel=opportunity.requires_travel,
+            requires_relocation=opportunity.requires_relocation,
+            requires_clearance=opportunity.requires_clearance,
+            replaces_full_time_work=opportunity.replaces_full_time_work,
         )
-        return int(cursor.lastrowid)
+        session.add(row)
+        session.flush()
+        return row
 
     @staticmethod
     def _insert_source_record(
-        connection: sqlite3.Connection,
+        session: Session,
         source_id: int,
         source_url: str,
         payload: str,
         payload_hash: str,
     ) -> int:
-        cursor = connection.execute(
-            """
-            INSERT INTO source_records (
-                source_id,
-                canonical_url,
-                payload_hash,
-                raw_payload_json,
-                retrieved_at
-            )
-            VALUES (
-                ?, ?, ?, ?,
-                strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
-            )
-            """,
-            (source_id, source_url or None, payload_hash, payload),
+        row = SourceRecord(
+            source_id=source_id,
+            canonical_url=source_url or None,
+            payload_hash=payload_hash,
+            raw_payload_json=payload,
+            retrieved_at=_now_iso(),
         )
-        return int(cursor.lastrowid)
+        session.add(row)
+        session.flush()
+        return int(row.id)
 
     def _evaluate_filters(
         self,
-        connection: sqlite3.Connection,
+        session: Session,
         opportunity_id: int,
         opportunity: OpportunityInput,
     ) -> str:
@@ -289,29 +259,17 @@ class OpportunityService:
 
         correlation_id = f"manual-opportunity-{opportunity_id}"
         for rule_code, outcome, evidence, explanation in evaluations:
-            connection.execute(
-                """
-                INSERT INTO filter_evaluations (
-                    opportunity_id,
-                    constitution_version,
-                    rule_code,
-                    outcome,
-                    evidence,
-                    explanation,
-                    evaluator_version,
-                    correlation_id
+            session.add(
+                FilterEvaluation(
+                    opportunity_id=opportunity_id,
+                    constitution_version=self.constitution.version,
+                    rule_code=rule_code,
+                    outcome=outcome,
+                    evidence=evidence,
+                    explanation=explanation,
+                    evaluator_version="hard-filters-v1",
+                    correlation_id=correlation_id,
                 )
-                VALUES (?, ?, ?, ?, ?, ?, 'hard-filters-v1', ?)
-                """,
-                (
-                    opportunity_id,
-                    self.constitution.version,
-                    rule_code,
-                    outcome,
-                    evidence,
-                    explanation,
-                    correlation_id,
-                ),
             )
 
         outcomes = {evaluation[1] for evaluation in evaluations}
@@ -372,4 +330,3 @@ class OpportunityService:
         if observed:
             return (rule_code, "fail", "yes", requirement)
         return (rule_code, "pass", "no", requirement)
-

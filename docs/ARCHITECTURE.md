@@ -240,7 +240,10 @@ Rules:
 - Approval records identify actor, action, target, scope, and time.
 - Audit events never contain secrets or complete sensitive documents.
 
-The initial physical design is in `database/schema.sql`.
+The initial physical design is documented in `database/schema.sql`. The
+applied schema is defined by SQLAlchemy models in `backend/db/models.py`
+and created via the Alembic migrations in `database/migrations/`; see
+`OE-ADR-014`.
 
 ## 8. API boundary
 

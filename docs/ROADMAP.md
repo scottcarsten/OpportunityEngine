@@ -37,13 +37,13 @@ A milestone is complete when:
 - [x] Define the initial architecture.
 - [x] Record foundational architectural decisions.
 - [x] Design the SQLite schema.
-- [ ] Review and approve the MVP backend scope and API contract (Issue #3).
+- [x] Review and approve the MVP backend scope and API contract (Issue #3).
 
 ### Milestone 1 — Backend foundation
 
 - [x] Create the FastAPI application skeleton.
 - [x] Add typed configuration and secret handling.
-- [ ] Add SQLAlchemy models and migrations based on `database/schema.sql`.
+- [x] Add SQLAlchemy models and migrations based on `database/schema.sql`.
 - [x] Add health and readiness endpoints.
 - [x] Add structured logging and audit-event services.
 - [x] Add unit and integration test infrastructure.

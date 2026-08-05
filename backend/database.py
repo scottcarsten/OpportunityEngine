@@ -1,68 +1,92 @@
-"""SQLite initialization and connection management."""
+"""SQLAlchemy engine, migrations, and session lifecycle."""
 
-import sqlite3
 from contextlib import contextmanager
 from pathlib import Path
 from threading import RLock
 from typing import Iterator
 
+from alembic import command
+from alembic.config import Config
+from sqlalchemy import Engine, create_engine, event, text
+from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy.pool import StaticPool
+
+
+_ALEMBIC_INI_PATH = Path("alembic.ini")
+
 
 class Database:
-    """Own the local SQLite database lifecycle."""
+    """Own the local SQLite database lifecycle via SQLAlchemy and Alembic."""
 
-    def __init__(self, database_path: Path, schema_path: Path) -> None:
+    def __init__(self, database_path: Path) -> None:
         self.database_path = database_path
-        self.schema_path = schema_path
-        self._connection: sqlite3.Connection | None = None
+        self._engine: Engine | None = None
+        self._session_factory: sessionmaker[Session] | None = None
         self._lock = RLock()
 
-    @property
-    def connection(self) -> sqlite3.Connection:
-        if self._connection is None:
-            raise RuntimeError("database has not been initialized")
-        return self._connection
-
     def initialize(self) -> None:
-        """Create the database, apply the baseline schema, and verify access."""
-        if not self.schema_path.is_file():
-            raise RuntimeError(f"database schema not found: {self.schema_path}")
-
+        """Create the database, apply migrations, and verify access."""
         self.database_path.parent.mkdir(parents=True, exist_ok=True)
-        # FastAPI runs synchronous endpoints in worker threads. The connection
-        # is application-owned and may therefore be used outside the lifespan
-        # thread; transactions remain short and service-controlled.
-        connection = sqlite3.connect(self.database_path, check_same_thread=False)
-        connection.row_factory = sqlite3.Row
-        connection.execute("PRAGMA foreign_keys = ON")
-        connection.execute("PRAGMA journal_mode = WAL")
 
-        existing_version = connection.execute(
-            "SELECT name FROM sqlite_master "
-            "WHERE type = 'table' AND name = 'schema_versions'"
-        ).fetchone()
-        if existing_version is None:
-            connection.executescript(self.schema_path.read_text(encoding="utf-8"))
+        # FastAPI runs synchronous endpoints in worker threads. StaticPool plus
+        # check_same_thread=False keeps one shared DBAPI connection for the
+        # application's lifetime, matching the previous single-connection
+        # model; the RLock in `session()` still serializes access to it.
+        engine = create_engine(
+            f"sqlite:///{self.database_path}",
+            poolclass=StaticPool,
+            connect_args={"check_same_thread": False},
+            future=True,
+        )
 
-        foreign_keys = connection.execute("PRAGMA foreign_keys").fetchone()
-        if foreign_keys is None or foreign_keys[0] != 1:
-            connection.close()
+        @event.listens_for(engine, "connect")
+        def _set_sqlite_pragmas(dbapi_connection, _connection_record) -> None:
+            cursor = dbapi_connection.cursor()
+            cursor.execute("PRAGMA foreign_keys = ON")
+            cursor.execute("PRAGMA journal_mode = WAL")
+            cursor.close()
+
+        self._engine = engine
+        self._run_migrations()
+        self._session_factory = sessionmaker(bind=engine, expire_on_commit=False, future=True)
+
+        with self.session() as session:
+            foreign_keys = session.execute(text("PRAGMA foreign_keys")).scalar()
+        if foreign_keys != 1:
+            self.close()
             raise RuntimeError("SQLite foreign-key enforcement is disabled")
 
-        self._connection = connection
+    def _run_migrations(self) -> None:
+        config = Config(str(_ALEMBIC_INI_PATH))
+        config.set_main_option("sqlalchemy.url", f"sqlite:///{self.database_path}")
+        command.upgrade(config, "head")
 
     def ping(self) -> bool:
         """Return whether the database responds to a minimal query."""
-        with self.locked_connection() as connection:
-            return connection.execute("SELECT 1").fetchone()[0] == 1
+        with self.session() as session:
+            return session.execute(text("SELECT 1")).scalar() == 1
+
+    @property
+    def engine(self) -> Engine:
+        if self._engine is None:
+            raise RuntimeError("database has not been initialized")
+        return self._engine
 
     @contextmanager
-    def locked_connection(self) -> Iterator[sqlite3.Connection]:
-        """Serialize access to the application-owned SQLite connection."""
+    def session(self) -> Iterator[Session]:
+        """Serialize access to a session bound to the application-owned engine."""
+        if self._session_factory is None:
+            raise RuntimeError("database has not been initialized")
         with self._lock:
-            yield self.connection
+            session = self._session_factory()
+            try:
+                yield session
+            finally:
+                session.close()
 
     def close(self) -> None:
-        """Close the active connection."""
-        if self._connection is not None:
-            self._connection.close()
-            self._connection = None
+        """Dispose the engine and its underlying connection."""
+        if self._engine is not None:
+            self._engine.dispose()
+            self._engine = None
+            self._session_factory = None
