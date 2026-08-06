@@ -235,7 +235,7 @@ the system still never submitting anything itself.
 - [x] Add configurable internal notification channels.
 - [x] Add review queues and follow-up reminders.
 - [x] Add opportunity aging and stale-listing detection.
-- [ ] Add reporting for pipeline volume, quality, and estimated value.
+- [x] Add reporting for pipeline volume, quality, and estimated value.
 - [ ] Add explicit approval receipts for restricted actions.
 - [ ] Design—but do not silently enable—external integrations.
 
@@ -254,6 +254,14 @@ each `collect` run without changing the opportunity's status — he still
 decides what happens next. The dashboard's existing status filters
 gained a "Follow-up due" chip rather than a separate queue page. See
 `OE-ADR-030`.
+
+Pipeline reporting is v0.3's fourth slice: a new `/reports` page shows
+opportunity volume by status and by source (including sources never
+collected, for operational visibility), scoring quality (latest score
+per opportunity, broken down by status), and estimated value grouped by
+pay type. No blended dollar total is ever computed, by Scott's own
+choice — hourly/fixed/salaried figures aren't comparable without
+guessing at hours worked. See `OE-ADR-031`.
 
 Opportunity aging and stale-listing detection is v0.3's first slice.
 Digging into the schema before building anything found `expires_at`,

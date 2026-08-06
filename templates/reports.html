@@ -1,0 +1,142 @@
+{% extends "base.html" %}
+{% block title %}Pipeline Report · OpportunityEngine{% endblock %}
+{% block content %}
+<div class="mb-4">
+  <h1 class="h2 mb-1">Pipeline report</h1>
+  <p class="text-secondary mb-0">
+    Volume, quality, and estimated value across the current pipeline.
+  </p>
+</div>
+
+<section class="bg-white border rounded p-4 mb-4">
+  <h2 class="h4">Volume by status</h2>
+  <table class="table table-sm">
+    <thead>
+      <tr><th>Status</th><th>Count</th></tr>
+    </thead>
+    <tbody>
+      {% for row in report.by_status %}
+      <tr>
+        <td>{{ row.status|replace("_", " ")|title }}</td>
+        <td>{{ row.count }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+
+<section class="bg-white border rounded p-4 mb-4">
+  <h2 class="h4">Volume by source</h2>
+  <p class="small text-secondary">
+    Cumulative across all collection runs, not just current opportunity
+    counts &mdash; a source can show more records seen/created than are
+    still around if some were later deduplicated.
+  </p>
+  <table class="table table-sm">
+    <thead>
+      <tr>
+        <th>Source</th>
+        <th>Runs</th>
+        <th>Records seen</th>
+        <th>Records created</th>
+        <th>Last run</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in report.by_source %}
+      <tr>
+        <td>{{ row.name }}</td>
+        <td>{{ row.run_count }}</td>
+        <td>{{ row.records_seen }}</td>
+        <td>{{ row.records_created }}</td>
+        <td>
+          {% if row.last_run_at %}
+            {{ row.last_run_at }}
+          {% else %}
+            <span class="text-secondary">Never collected</span>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+
+<section class="bg-white border rounded p-4 mb-4">
+  <h2 class="h4">Quality</h2>
+  <p class="small text-secondary">
+    Advisory fit scores are never a decision &mdash; this shows how
+    scoring compares against your own review decisions.
+  </p>
+  {% if report.quality.scored_count == 0 %}
+  <p class="text-secondary">No scored opportunities yet.</p>
+  {% else %}
+  <dl class="row mb-4">
+    <dt class="col-sm-4">Scored opportunities</dt>
+    <dd class="col-sm-8">{{ report.quality.scored_count }}</dd>
+    <dt class="col-sm-4">Average score</dt>
+    <dd class="col-sm-8">{{ "%.1f"|format(report.quality.avg_score) }}</dd>
+    <dt class="col-sm-4">Score range</dt>
+    <dd class="col-sm-8">
+      {{ "%.1f"|format(report.quality.min_score) }} &ndash;
+      {{ "%.1f"|format(report.quality.max_score) }}
+    </dd>
+    {% if report.quality.avg_confidence is not none %}
+    <dt class="col-sm-4">Average confidence</dt>
+    <dd class="col-sm-8">{{ "%.1f"|format(report.quality.avg_confidence) }}</dd>
+    {% endif %}
+  </dl>
+  <h3 class="h6">Average score by status</h3>
+  <table class="table table-sm">
+    <thead>
+      <tr><th>Status</th><th>Scored count</th><th>Average score</th></tr>
+    </thead>
+    <tbody>
+      {% for row in report.quality.by_status %}
+      <tr>
+        <td>{{ row.status|replace("_", " ")|title }}</td>
+        <td>{{ row.count }}</td>
+        <td>{{ "%.1f"|format(row.avg_score) }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+</section>
+
+<section class="bg-white border rounded p-4 mb-4">
+  <h2 class="h4">Estimated value by pay type</h2>
+  <p class="small text-secondary">
+    Active pipeline only (new/eligible/shortlisted/deferred/preparing).
+    Ranges are shown per pay type, not combined into one total &mdash;
+    hourly, fixed-price, and salaried figures aren't comparable without
+    guessing at hours worked, so no blended number is calculated.
+  </p>
+  {% if report.value_by_period %}
+  <table class="table table-sm">
+    <thead>
+      <tr><th>Pay type</th><th>Count</th><th>Range</th></tr>
+    </thead>
+    <tbody>
+      {% for row in report.value_by_period %}
+      <tr>
+        <td>{{ row.period|replace("_", " ")|title }}</td>
+        <td>{{ row.count }}</td>
+        <td>
+          {% if row.min is not none or row.max is not none %}
+            {{ row.min if row.min is not none else "?" }}
+            &ndash;
+            {{ row.max if row.max is not none else "?" }}
+          {% else %}
+            <span class="text-secondary">Not supplied</span>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="text-secondary">No active opportunities.</p>
+  {% endif %}
+</section>
+{% endblock %}

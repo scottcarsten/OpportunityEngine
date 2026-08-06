@@ -9,6 +9,7 @@ from fastapi import FastAPI
 
 from backend.api.health import router as health_router
 from backend.api.opportunities import router as opportunities_router
+from backend.api.reports import router as reports_router
 from backend.api.resumes import router as resumes_router
 from backend.config import Settings, get_settings
 from backend.database import Database
@@ -53,6 +54,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     application.state.settings = resolved_settings
     application.include_router(health_router)
     application.include_router(opportunities_router)
+    application.include_router(reports_router)
     application.include_router(resumes_router)
     return application
 

@@ -1473,3 +1473,64 @@ fixed interval, and extending the existing dashboard filters with a
   configured) without having to remember to check back manually.
 - A per-notification-type preference and a genuinely separate queue view
   remain deliberately out of scope, per Scott's own choice above.
+
+---
+
+## OE-ADR-031 — Pipeline reporting: volume, quality, and estimated value
+
+**Status:** Accepted
+**Date:** 2026-08-06
+
+### Context
+
+v0.3's last reporting item needed **no schema change** — `collection_runs`
+already tracks `records_seen`/`records_created` per source per run
+(unused for reporting until now), and `scoring_runs.overall_score`/
+`confidence` already exist. The one real design question was estimated
+value: opportunities carry different compensation structures (hourly,
+daily, fixed-price, salaried), and summing them into one number requires
+guessing at hours worked — especially risky here, since Scott stacks
+part-time/after-hours work around a day job rather than working any one
+opportunity full-time. Asked directly, Scott chose: **show ranges
+grouped by pay type, never a blended total** — the same "don't invent
+what isn't known" precedent as `OE-ADR-021`.
+
+### Decision
+
+- New `ReportingService` (`backend/services/reporting_service.py`) —
+  deliberately takes only a `Database`, no `Constitution`; nothing here
+  is a governed decision, just descriptive statistics over data other
+  services already produce and audit.
+- **Volume** has two views: `_counts_by_status()` (current snapshot,
+  zero-filled for every known status so the report never silently omits
+  one) and `_volume_by_source()` (`Source` **outer**-joined to
+  `CollectionRun`, so a source that's never been run still shows up with
+  `run_count=0` — deliberate operational visibility, not just a count of
+  what's in the table today).
+- **Quality** uses only the **latest** scoring run per opportunity
+  (`MAX(scoring_runs.id)` grouped by `opportunity_id`, filtered to
+  `overall_score IS NOT NULL`) — re-scoring always inserts a new row
+  rather than overwriting (`OE-ADR-007`), so averaging every historical
+  run would double-count re-scored opportunities and skew the numbers.
+  Broken down by `lifecycle_status` too, since comparing average score
+  against what Scott actually decided is a real signal of whether
+  scoring is tracking his judgment.
+- **Value** is scoped to the *active* pipeline only (`new`, `eligible`,
+  `shortlisted`, `deferred`, `preparing` — excludes `ineligible`/
+  `rejected`/`expired`), grouped by `compensation_period`, showing
+  count + min/max range per pay type. `NULL` and `'unknown'` periods
+  merge into one "Unspecified" bucket. **No cross-period sum is ever
+  computed, in code or in the template** — each pay-type bucket is
+  independent, per Scott's decision above.
+- New `GET /reports` route (`backend/api/reports.py`, mirrors
+  `backend/api/resumes.py`'s shape) and `templates/reports.html`, linked
+  from the nav bar as "Pipeline report."
+
+### Consequences
+
+- Scott gets real operational visibility (which sources have gone
+  stale, whether AI scoring tracks his own decisions) without any
+  estimate that could mislead him about actual earning potential.
+- If a genuine blended estimate is ever wanted, it needs an explicit,
+  Scott-supplied assumption (e.g., hours/week) — deliberately not
+  invented here.
