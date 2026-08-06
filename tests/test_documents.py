@@ -41,11 +41,31 @@ class FakeDocumentProvider:
         self.calls += 1
         if self.error is not None:
             raise self.error
-        return DocumentGenerationResult(
-            content=f"Tailored résumé for {opportunity['title']}, grounded in "
+        resume_fields = {
+            "professional_summary": f"Tailored summary for {opportunity['title']}, grounded in "
             f"{resume_bytes.decode('utf-8')}.",
+            "core_competencies": ["Azure", "AWS"],
+            "experience": [
+                {
+                    "company": "Acme Corp",
+                    "location": "Remote",
+                    "title": "Engineer",
+                    "dates": "2021 - Present",
+                    "bullets": ["Led infrastructure work."],
+                },
+                {
+                    "company": "Old Co",
+                    "location": "Dallas, TX",
+                    "title": "Consultant",
+                    "dates": "2004 - 2005",
+                    "bullets": [],
+                },
+            ],
+        }
+        return DocumentGenerationResult(
+            content=json.dumps(resume_fields),
             unsupported_claims=self.unsupported_claims,
-            structured_payload={"unsupported_claims": self.unsupported_claims},
+            structured_payload={**resume_fields, "unsupported_claims": self.unsupported_claims},
         )
 
     def generate_cover_letter(self, opportunity, master_resume, resume_bytes, constitution):
@@ -411,6 +431,7 @@ def client_and_app(tmp_path: Path):
         constitution_path=Path("config/constitution.json"),
         resume_storage_path=tmp_path / "resumes",
         document_storage_path=tmp_path / "documents",
+        profile_path=Path("tests/fixtures/profile_sample.json"),
     )
     app = create_app(settings)
     with TestClient(app) as test_client:
@@ -577,3 +598,155 @@ def test_decision_route_404s_on_mismatched_opportunity(client_and_app) -> None:
         follow_redirects=False,
     )
     assert response.status_code == 404
+
+
+def test_export_docx_route_returns_valid_file(client_and_app) -> None:
+    client, app = client_and_app
+    app.state.document_provider = FakeDocumentProvider()
+
+    client.post(
+        "/resume",
+        files={"file": ("resume.txt", b"Master resume content.", "text/plain")},
+        follow_redirects=False,
+    )
+    created = client.post("/opportunities", data=_form(), follow_redirects=False)
+    detail_path = urlparse(created.headers["location"]).path
+    client.post(f"{detail_path}/review", data={"decision": "request_preparation"})
+    client.post(f"{detail_path}/documents/tailored-resume", follow_redirects=False)
+
+    with app.state.database.session() as session:
+        document_id = session.execute(select(GeneratedDocument.id)).scalars().one()
+
+    response = client.get(f"{detail_path}/documents/{document_id}/export.docx")
+
+    assert response.status_code == 200
+    assert response.headers["content-type"] == (
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    )
+    assert ".docx" in response.headers["content-disposition"]
+    assert response.content[:4] == b"PK\x03\x04"
+
+
+def test_export_pdf_route_returns_valid_file(client_and_app) -> None:
+    client, app = client_and_app
+    app.state.document_provider = FakeDocumentProvider()
+
+    client.post(
+        "/resume",
+        files={"file": ("resume.txt", b"Master resume content.", "text/plain")},
+        follow_redirects=False,
+    )
+    created = client.post("/opportunities", data=_form(), follow_redirects=False)
+    detail_path = urlparse(created.headers["location"]).path
+    client.post(f"{detail_path}/review", data={"decision": "request_preparation"})
+    client.post(f"{detail_path}/documents/tailored-resume", follow_redirects=False)
+
+    with app.state.database.session() as session:
+        document_id = session.execute(select(GeneratedDocument.id)).scalars().one()
+
+    response = client.get(f"{detail_path}/documents/{document_id}/export.pdf")
+
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "application/pdf"
+    assert ".pdf" in response.headers["content-disposition"]
+    assert response.content[:5] == b"%PDF-"
+
+
+def test_export_route_404s_on_mismatched_opportunity(client_and_app) -> None:
+    client, app = client_and_app
+    app.state.document_provider = FakeDocumentProvider()
+
+    client.post(
+        "/resume",
+        files={"file": ("resume.txt", b"Master resume content.", "text/plain")},
+        follow_redirects=False,
+    )
+    first = client.post("/opportunities", data=_form(), follow_redirects=False)
+    first_path = urlparse(first.headers["location"]).path
+    client.post(f"{first_path}/review", data={"decision": "request_preparation"})
+    client.post(f"{first_path}/documents/tailored-resume", follow_redirects=False)
+
+    second = client.post(
+        "/opportunities", data=_form(title="Second Role", source_url="https://example.com/jobs/3"),
+        follow_redirects=False,
+    )
+    second_path = urlparse(second.headers["location"]).path
+
+    with app.state.database.session() as session:
+        document_id = session.execute(select(GeneratedDocument.id)).scalars().one()
+
+    response = client.get(f"{second_path}/documents/{document_id}/export.docx")
+    assert response.status_code == 404
+
+
+def test_export_docx_reflects_structured_resume_and_static_profile(client_and_app) -> None:
+    client, app = client_and_app
+    app.state.document_provider = FakeDocumentProvider()
+
+    client.post(
+        "/resume",
+        files={"file": ("resume.txt", b"Master resume content.", "text/plain")},
+        follow_redirects=False,
+    )
+    created = client.post("/opportunities", data=_form(), follow_redirects=False)
+    detail_path = urlparse(created.headers["location"]).path
+    client.post(f"{detail_path}/review", data={"decision": "request_preparation"})
+    client.post(f"{detail_path}/documents/tailored-resume", follow_redirects=False)
+
+    with app.state.database.session() as session:
+        document_id = session.execute(select(GeneratedDocument.id)).scalars().one()
+
+    response = client.get(f"{detail_path}/documents/{document_id}/export.docx")
+    assert response.status_code == 200
+
+    import io
+
+    import docx
+
+    document = docx.Document(io.BytesIO(response.content))
+    assert len(document.tables) == 0
+    full_text = "\n".join(p.text for p in document.paragraphs)
+    assert "Test Candidate" in full_text  # static profile data, not AI-generated
+    assert "Test Certification A" in full_text
+    bullet_texts = [p.text for p in document.paragraphs if p.style.name == "List Bullet"]
+    assert "Led infrastructure work." in bullet_texts
+    assert not any("Old Co" in text for text in bullet_texts)  # compressed role has no bullets
+
+
+def test_export_falls_back_for_legacy_plain_text_resume(client_and_app) -> None:
+    client, app = client_and_app
+
+    created = client.post("/opportunities", data=_form(), follow_redirects=False)
+    detail_path = urlparse(created.headers["location"]).path
+
+    with app.state.database.session() as session:
+        opportunity_id = int(detail_path.rsplit("/", 1)[-1])
+        row = GeneratedDocument(
+            opportunity_id=opportunity_id,
+            document_type="tailored_resume",
+            version=1,
+            status="ready_for_review",
+            storage_path=None,
+            content_hash=None,
+            provider="fake",
+            model="fake-model",
+            prompt_version="legacy",
+            unsupported_claims_json="[]",
+        )
+        session.add(row)
+        session.flush()
+        document_id = row.id
+        (app.state.settings.document_storage_path).mkdir(parents=True, exist_ok=True)
+        legacy_path = app.state.settings.document_storage_path / "legacy.txt"
+        legacy_path.write_text("Just a plain prose résumé draft, pre-dating structured output.")
+        session.execute(
+            update(GeneratedDocument)
+            .where(GeneratedDocument.id == document_id)
+            .values(storage_path=str(legacy_path))
+        )
+        session.commit()
+
+    response = client.get(f"{detail_path}/documents/{document_id}/export.docx")
+
+    assert response.status_code == 200
+    assert response.content[:4] == b"PK\x03\x04"

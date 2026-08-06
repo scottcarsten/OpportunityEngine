@@ -1,0 +1,16 @@
+{
+    "full_name": "Your Full Name",
+    "title_line": "Your Title | Another Title | A Third Title",
+    "location": "City, ST",
+    "phone": "555-555-5555",
+    "email": "you@example.com",
+    "education": [
+        {
+            "institution": "University Name",
+            "degree": "Degree, Field of Study"
+        }
+    ],
+    "certifications": [
+        "Certification Name"
+    ]
+}

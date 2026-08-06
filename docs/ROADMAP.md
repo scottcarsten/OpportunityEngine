@@ -8,10 +8,9 @@ The roadmap is directional rather than a promise of autonomous execution. Any ex
 
 ## Current status
 
-**Project phase:** v0.2 in progress  
-**Completed:** all of v0.1 (design baseline through the review inbox), plus v0.2's master résumé import/versioning, tailored-résumé-generation, and cover-letter/fit-report-generation slices  
-**In progress:** v0.2 (application preparation) — document versioning and approval states, and DOCX/PDF export remain  
-**Next milestone:** add document versioning and approval states, or export DOCX/PDF artifacts (Issue #7)
+**Project phase:** v0.2 complete  
+**Completed:** all of v0.1 (design baseline through the review inbox), and all of v0.2 (application preparation) — master résumé import/versioning, tailored-résumé/cover-letter/fit-report generation, document approval states, and DOCX/PDF export  
+**Next milestone:** v0.3 — controlled workflow and notifications (not yet sliced)
 
 ## Definition of done
 
@@ -160,7 +159,7 @@ page now also shows its source (`sources`/`source_records`). See
 - [x] Compare generated claims against approved source material.
 - [x] Flag unsupported or uncertain claims.
 - [x] Add document versioning and approval states.
-- [ ] Export DOCX and PDF artifacts.
+- [x] Export DOCX and PDF artifacts.
 
 Master résumé import/versioning (`backend/services/resume_service.py`,
 `/resume`) was v0.2's first slice. Content-hash-addressed storage means a
@@ -177,6 +176,17 @@ supported by it. Generation requires Scott's `request_preparation`
 review decision first (`lifecycle_status == "preparing"`), not just an
 eligible or scored opportunity. See `OE-ADR-020`.
 
+The tailored résumé's output was later upgraded from generic formatted
+prose to a real, ATS-conscious template matching Scott's own résumé
+design: a static identity/education/certifications block from
+`config/profile.json` the AI never touches, plus structured
+(not free-text) `professional_summary`/`core_competencies`/`experience`
+output with per-role bullet selection so the AI judges which of ten-plus
+roles earn full detail versus a compressed one-line entry, targeting a
+two-page render. Core Competencies renders as a plain list, not a table
+— the one deliberate ATS-safety deviation from Scott's original design.
+See `OE-ADR-026`.
+
 Cover-letter and fit-report generation is the third slice, reusing that
 same service and provider. A cover letter follows the same
 draft-and-flag-unsupported-claims pattern as the résumé; a fit report is
@@ -191,10 +201,20 @@ is the only writer of `approved`/`rejected` — permanent once set, with a
 correction always meaning a new version, never an edit. A flagged
 (`validation_failed`) document stays approvable, since flagging is meant
 to surface a judgment call for Scott, not block one. See `OE-ADR-024`.
-DOCX/PDF export is the one remaining follow-on milestone — exporting an
-*approved* document is its natural trigger point. Tracked by Issue #7.
 
-**v0.2 outcome:** Scott can approve or reject complete application packages, but the system still cannot submit them.
+DOCX/PDF export is the fifth and final slice, closing out v0.2.
+`backend/documents/markdown_subset.py` parses the narrow subset of
+Markdown real generated content actually uses (headings, bold,
+paragraphs); `backend/documents/export.py` renders it on demand via
+`python-docx`/`reportlab` — no new AI call, nothing persisted beyond the
+existing `.txt`. Export works on any document regardless of approval
+status, by design. See `OE-ADR-025`. Tracked by Issue #7.
+
+**v0.2 outcome reached:** Scott can import a master résumé, generate a
+tailored résumé/cover letter/fit report for any opportunity he's decided
+to prepare, approve or reject each one, and export an approved (or any)
+draft as DOCX or PDF — the full application-preparation pipeline, with
+the system still never submitting anything itself.
 
 ## v0.3 — Controlled workflow and notifications
 

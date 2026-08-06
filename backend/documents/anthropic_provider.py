@@ -14,6 +14,13 @@ synthesizes a scoring run that already happened (`OE-ADR-017`) rather
 than drafting new claims about Scott from scratch, so its system prompt
 explicitly frames the task as exposition of already-computed judgments,
 not fresh re-scoring (`OE-ADR-023`).
+
+The tailored résumé's identity block (name/title-line/contact) and its
+Education/Certifications sections are static data from `config/profile.json`
+that Claude never sees — only `professional_summary`, `core_competencies`,
+and `experience` (with per-role bullet selection) are AI-drafted, as
+structured output consumed by `backend/documents/resume_render.py`'s
+template renderer rather than free text (`OE-ADR-026`).
 """
 
 import base64
@@ -28,8 +35,18 @@ from backend.documents.base import DocumentGenerationResult
 from backend.services.constitution_service import Constitution
 
 
+class _ExperienceEntryModel(BaseModel):
+    company: str
+    location: str
+    title: str
+    dates: str
+    bullets: list[str]
+
+
 class _ResumeResponseModel(BaseModel):
-    resume_content: str
+    professional_summary: str
+    core_competencies: list[str]
+    experience: list[_ExperienceEntryModel]
     unsupported_claims: list[str]
 
 
@@ -52,18 +69,48 @@ anywhere."""
 
 _RESUME_SYSTEM_PROMPT = _BASE_INSTRUCTIONS + """
 
-Draft a tailored résumé for the opportunity described in the \
-<opportunity> block, using only content grounded in the master résumé \
-given in the <master_resume> block (as text or as an attached document). \
-You may reorder, re-emphasize, or re-summarize what the master résumé \
-already contains to fit this opportunity, but you must never invent \
-employers, titles, dates, credentials, certifications, or outcomes that \
-are not present in the master résumé.
+Draft the *tailorable* content of a résumé for the opportunity described \
+in the <opportunity> block, using only content grounded in the master \
+résumé given in the <master_resume> block (as text or as an attached \
+document). The résumé's identity header, education, and certifications \
+are handled separately and are not part of your output — focus only on \
+`professional_summary`, `core_competencies`, and `experience`.
 
-After drafting, review your own draft and list every statement in it \
-that is not directly supported by the master résumé's actual content, \
-in `unsupported_claims`. This should usually be an empty list — it exists \
-so nothing invented ever reaches {owner} without being flagged first."""
+- `professional_summary`: 3-4 sentences tailored to this opportunity, \
+grounded only in the master résumé's actual background.
+- `core_competencies`: 9-12 short skill/competency phrases, selected \
+from what the master résumé actually demonstrates, ordered by relevance \
+to this opportunity. Do not invent a competency that isn't evidenced \
+somewhere in the master résumé.
+- `experience`: every role is a candidate, but you decide which ones \
+earn full detail. This résumé must read as roughly two pages once \
+rendered, so be selective, not exhaustive — space is genuinely tight, \
+favor fewer, sharper bullets over comprehensive coverage:
+  - Order roles by genuine relevance to *this* opportunity. Recency is \
+the natural default signal, but a real, specific match to the posting \
+(e.g. a healthcare-IT opportunity and an older healthcare-IT role) can \
+justify placing or featuring an older role over a more recent but less \
+relevant one.
+  - For roles that earn full detail: write 3-5 concise bullets in \
+`bullets` (one line each once rendered, not multi-sentence paragraphs), \
+each grounded in what the master résumé actually says about that role, \
+re-emphasized or re-summarized for this opportunity but never inventing \
+an accomplishment, technology, or outcome that isn't there.
+  - For roles that don't earn full detail (typically the oldest, least \
+relevant ones, but this is a relevance judgment, not a fixed age cutoff): \
+still include the role — never drop it from the work history entirely — \
+but set `bullets` to an empty list. An empty `bullets` list is exactly \
+how this résumé's renderer knows to show that role as a single \
+compressed line (company, title, dates only) instead of full detail. \
+Aim for roughly 3-4 roles with full bullets; the rest stay compressed.
+  - `company`/`location`/`title`/`dates` must match the master résumé \
+exactly — never invent or alter an employer, title, or date.
+
+After drafting, review your own output and list every statement in it \
+(in the summary, competencies, or any bullet) that is not directly \
+supported by the master résumé's actual content, in `unsupported_claims`. \
+This should usually be an empty list — it exists so nothing invented \
+ever reaches {owner} without being flagged first."""
 
 _COVER_LETTER_SYSTEM_PROMPT = _BASE_INSTRUCTIONS + """
 
@@ -236,10 +283,15 @@ class AnthropicDocumentProvider:
             output_format=_ResumeResponseModel,
             failure_noun="résumé draft",
         )
+        payload = json.loads(parsed.model_dump_json())
+        resume_fields = {
+            key: payload[key]
+            for key in ("professional_summary", "core_competencies", "experience")
+        }
         return DocumentGenerationResult(
-            content=parsed.resume_content,
+            content=json.dumps(resume_fields),
             unsupported_claims=parsed.unsupported_claims,
-            structured_payload=json.loads(parsed.model_dump_json()),
+            structured_payload=payload,
         )
 
     def generate_cover_letter(

@@ -11,6 +11,7 @@ venv/
 .env
 .env.*
 !.env.example
+config/profile.json
 
 # OpportunityEngine runtime data
 data/

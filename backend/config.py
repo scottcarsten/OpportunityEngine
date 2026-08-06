@@ -21,6 +21,7 @@ class Settings(BaseSettings):
     port: int = Field(default=8000, ge=1, le=65535)
     database_path: Path = Path("data/opportunity_engine.db")
     constitution_path: Path = Path("config/constitution.json")
+    profile_path: Path = Path("config/profile.json")
     resume_storage_path: Path = Path("data/resumes")
     document_storage_path: Path = Path("data/documents")
     log_level: str = "INFO"

@@ -1019,3 +1019,185 @@ protective trigger; every other one (`resume_sources`, `filter_evaluations`,
 - DOCX/PDF export — the one remaining v0.2 item — now has a natural
   trigger point: exporting an *approved* document, not an undecided
   draft.
+
+---
+
+## OE-ADR-025 — DOCX/PDF export renders a bounded Markdown subset, on demand
+
+**Status:** Accepted
+**Date:** 2026-08-06
+
+### Context
+
+v0.2's last item. Every generated document is stored and shown as plain
+text. Checking real content generated this session showed formatting is
+model-discretionary, not something any prompt currently requests or
+forbids: the real cover letter for the Platform.sh opportunity was plain
+prose (and contains Scott's actual name, address, and phone number,
+confirming this content is genuinely sensitive and stays local), while
+the real fit report for the same opportunity used `#`/`##` Markdown
+headers and `**bold**`. Dumping raw `#`/`**` characters into an exported
+DOCX/PDF would look broken.
+
+### Decision
+
+- `backend/documents/markdown_subset.py` parses only what's actually been
+  observed: `#`/`##`/`###` headings, `**bold**` spans, and
+  blank-line-separated paragraphs. No lists, links, or tables — an
+  explicit scope boundary, not an oversight; an unrecognized construct
+  falls through as plain paragraph text rather than being mangled.
+  Heading detection only requires the block's *first line* to match,
+  so a heading immediately followed by body text on the next line (no
+  blank line) still splits correctly, not just the blank-line convention
+  the real content happens to use today.
+- `backend/documents/export.py` has two pure functions,
+  `render_docx`/`render_pdf`, both consuming the same parsed block list —
+  one parser, two renderers. `render_docx` reuses `python-docx` (already
+  a dependency for *reading* imported résumés, now also used to write).
+  `render_pdf` uses `reportlab` (new dependency) — a pure-Python PDF
+  library with no system binary requirement, ruling out e.g.
+  LibreOffice-headless conversion.
+- **Every run of user-supplied text through ReportLab's `Paragraph` is
+  XML-escaped (`xml.sax.saxutils.escape`) before any `<b>` markup is
+  added.** `Paragraph` interprets its input as a small XML dialect;
+  unescaped `&`/`<`/`>` in real content (an org name like "AT&T", a
+  description containing `<script>`-looking text) would otherwise raise
+  or silently corrupt output. Caught during implementation by testing
+  against a deliberately adversarial sample, not left to surface in
+  production.
+- **Rendering is on-demand, not persisted.** Unlike the `.txt` original
+  (content-hash-addressed, stored once), DOCX/PDF bytes are generated
+  fresh per request and returned directly — no AI call involved, cheap
+  and deterministic, so there's nothing to gain from storing three
+  format copies per version.
+- **Export is available regardless of document status** (confirmed with
+  Scott before implementing) — `ready_for_review`, `validation_failed`,
+  `approved`, and `rejected` are all exportable. It's a local format
+  conversion of text that already exists, not a new approval boundary;
+  restricting it to `approved` only would block previewing a draft's
+  actual formatting before deciding on it.
+
+### Consequences
+
+- v0.2 is complete: import → generate (résumé/cover letter/fit report) →
+  approve/reject → export, all working end to end against real data.
+- Any future document type (a `proposal`, per the schema's existing
+  `document_type` check constraint) gets export for free — `export.py`
+  only depends on parsed blocks, not on which kind of document produced
+  them.
+- If the model ever produces a construct outside this subset (a list, a
+  link), it will render as an unstructured paragraph rather than broken
+  markup — a known, acceptable degradation documented here rather than a
+  silent gap.
+
+---
+
+## OE-ADR-026 — Tailored résumé: structured generation, static identity data, ATS-conscious template
+
+**Status:** Accepted
+**Date:** 2026-08-06
+
+### Context
+
+Scott shared the actual résumé template he'd built in an earlier
+Claude.ai session (navy/green header, bold section rules, a Core
+Competencies grid, bold company/location + bold-italic title/italic
+dates per role) and his full master résumé — ten roles back to 1996,
+Education, Certifications. His goal, stated directly: get past the
+automated résumé screeners (ATS) real companies use, not just produce
+readable prose. Free-form prose/Markdown (`OE-ADR-025`) can't reproduce
+that template — a résumé is structured data (a summary, a competency
+list, role entries each with their own bullets), not a paragraph. This
+decision covers the tailored résumé only; cover letter and fit report
+are unaffected.
+
+Every design choice below was worked out through direct dialogue with
+Scott, not decided unilaterally:
+
+### Decision
+
+- **The identity header, Education, and Certifications are static data
+  Claude never sees or generates.** `config/profile.json` (gitignored,
+  mirroring the `.env`/`.env.example` precedent — real file local-only,
+  `.example` committed) holds `full_name`, `title_line`, `location`,
+  `phone`, `email`, `education`, and `certifications` (names only — no
+  license/credential IDs, per Scott: "available upon request"). This
+  isn't a prompt-engineering choice; it's structural — there is no code
+  path by which the AI can alter this data, the same guarantee
+  `master_resume_read_only` gets from DB triggers, achieved here by the
+  data simply never entering the AI's input or output.
+- **`generate_tailored_resume` now returns structured JSON** —
+  `professional_summary`, `core_competencies` (9-15 phrases), and
+  `experience` (each role: `company`/`location`/`title`/`dates`/
+  `bullets`) — instead of one prose string. `DocumentGenerationResult.content`
+  stays `str` (no interface change elsewhere); the provider
+  `json.dumps()`s the structured dict into it.
+- **Role selection is a relevance judgment, not a hard year cutoff.**
+  The prompt asks the model to order and select roles by genuine
+  relevance to *this* opportunity — recency is the default signal, but a
+  real match (a healthcare-IT posting and an older healthcare-IT role)
+  can override it. A role that doesn't earn full detail still appears
+  (`bullets: []` renders as a single compressed company/title/dates
+  line) — the work history is never truncated, only de-emphasized.
+  Same grounding discipline as `OE-ADR-020`: never invent an employer,
+  title, date, or bullet not in the master résumé, extended from
+  "never invent" to also cover "never omit a role from history entirely."
+  Target: roughly 3-5 roles with full bullets, rendering to about two
+  pages — the accepted norm for 25 years of senior-level experience.
+- **Core Competencies renders as a plain bullet list, not the original
+  template's table.** The one deliberate visual deviation from Scott's
+  template — bordered/shaded tables are a known, real ATS-parsing risk;
+  every other element (bold, bullets, standard section headings) is
+  already ATS-safe. Enforced by an automated test
+  (`tests/test_resume_render.py`'s `len(document.tables) == 0`), not
+  just a visual claim.
+- **`backend/documents/resume_render.py`** renders the actual template
+  (navy `#1F3864`/green `#1F6357`, chosen as reasonable representative
+  values — Scott can request exact tweaks once he sees real rendered
+  output) via `python-docx`/`reportlab`, separate from the generic
+  Markdown-subset path (`OE-ADR-025`) cover letters and fit reports
+  still use.
+- **Legacy fallback.** The two tailored-résumé versions generated before
+  this change are plain prose, not JSON. `parse_resume_content` returns
+  `None` for non-JSON content; both the in-app preview and export fall
+  back to the pre-existing generic renderer instead of crashing — a
+  one-time compatibility note, not an ongoing design.
+- **Test fixtures never depend on the real, gitignored `config/profile.json`.**
+  `tests/fixtures/profile_sample.json` is a committed placeholder;
+  `client_and_app`'s `Settings` explicitly points `profile_path` at it —
+  caught during implementation (the export tests initially fell through
+  to the real local file and would have broken in CI, where it doesn't
+  exist).
+
+### Consequences
+
+- The exported tailored résumé now genuinely resembles the template
+  Scott showed, not generic formatted prose.
+- Every future opportunity's tailored résumé is grounded in the same
+  full work history, letting the AI make a fresh relevance judgment per
+  posting rather than Scott re-curating roles by hand each time.
+- The cover letter's own template work (deliberately simple/linear for
+  ATS safety, per Scott's direction) is a separate, not-yet-started
+  follow-on — this ADR covers the résumé only.
+
+### Addendum — hitting the 2-page target (2026-08-06)
+
+The first live render came in at ~4 pages against real content (15
+competencies, 4 full-bullet roles). Fixed with two independent changes,
+both requested directly by Scott:
+
+- **Layout**: 0.25" margins on all four sides (his real-world default for
+  printed documents), smaller body/bullet font (9-9.5pt vs. the initial
+  10-11pt), and tighter paragraph/heading spacing throughout both
+  renderers — verified this alone brought the *same* v2 content from 4
+  pages to 3.
+- **Density**: tightened the generation prompt's guidance — competencies
+  9-12 (was 9-15), roles with full bullets 3-4 (was 3-5), bullets per
+  role 3-5 concise one-liners (was 4-7) — reasoning that an ATS reads
+  smaller fonts fine, so cutting font size costs nothing, while cutting
+  real content should be minimized and only pushed as far as actually
+  needed.
+
+Combined, a fresh live generation rendered to exactly 2 pages with all 9
+roles still present in the work history (compressed roles still appear
+as a single line — nothing dropped, per the original decision above).

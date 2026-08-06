@@ -1,0 +1,17 @@
+{
+    "full_name": "Test Candidate",
+    "title_line": "Test Engineer | Test Consultant",
+    "location": "Test City, TX",
+    "phone": "555-000-0000",
+    "email": "test.candidate@example.com",
+    "education": [
+        {
+            "institution": "Test University",
+            "degree": "B.S. Information Technology"
+        }
+    ],
+    "certifications": [
+        "Test Certification A",
+        "Test Certification B"
+    ]
+}

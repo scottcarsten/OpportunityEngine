@@ -245,17 +245,21 @@
       <div class="border-top pt-3">
         <div class="d-flex justify-content-between align-items-baseline">
           <strong>Version {{ latest_doc.version }}</strong>
-          {% if latest_doc.status == "ready_for_review" %}
-            <span class="badge text-bg-success">Ready for review</span>
-          {% elif latest_doc.status == "validation_failed" %}
-            <span class="badge text-bg-danger">Validation failed</span>
-          {% elif latest_doc.status == "approved" %}
-            <span class="badge text-bg-success">Approved</span>
-          {% elif latest_doc.status == "rejected" %}
-            <span class="badge text-bg-secondary">Rejected</span>
-          {% else %}
-            <span class="badge text-bg-secondary">{{ latest_doc.status|replace("_", " ")|title }}</span>
-          {% endif %}
+          <div class="d-flex align-items-baseline gap-2">
+            <a class="small" href="/opportunities/{{ opportunity_id }}/documents/{{ latest_doc.id }}/export.docx">.docx</a>
+            <a class="small" href="/opportunities/{{ opportunity_id }}/documents/{{ latest_doc.id }}/export.pdf">.pdf</a>
+            {% if latest_doc.status == "ready_for_review" %}
+              <span class="badge text-bg-success">Ready for review</span>
+            {% elif latest_doc.status == "validation_failed" %}
+              <span class="badge text-bg-danger">Validation failed</span>
+            {% elif latest_doc.status == "approved" %}
+              <span class="badge text-bg-success">Approved</span>
+            {% elif latest_doc.status == "rejected" %}
+              <span class="badge text-bg-secondary">Rejected</span>
+            {% else %}
+              <span class="badge text-bg-secondary">{{ latest_doc.status|replace("_", " ")|title }}</span>
+            {% endif %}
+          </div>
         </div>
         {% if latest_doc.unsupported_claims %}
         <div class="alert alert-danger small mt-2 mb-2">

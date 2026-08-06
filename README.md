@@ -132,7 +132,7 @@ pyproject.toml
 
 ## Status
 
-✅ **v0.1 MVP complete** · 🚧 **v0.2 in progress**
+✅ **v0.1 MVP complete** · ✅ **v0.2 application preparation complete**
 
 Working today:
 
@@ -160,20 +160,25 @@ Working today:
   material (`/resume`) — a correction is always a new version; nothing
   can edit or delete one once imported
 - Generating a tailored résumé, cover letter, and fit report per
-  opportunity via Claude Opus 5 — the résumé and cover letter are
-  grounded only in the current master résumé, the fit report synthesizes
-  an opportunity's existing score into readable prose; any unsupported
-  claim is flagged for review, and all three are only available once
-  you've made a "Request preparation" review decision on that opportunity
-  (the fit report also needs a completed score first)
+  opportunity via Claude Opus 5 — grounded only in the current master
+  résumé, with any unsupported claim flagged for review; all three are
+  only available once you've made a "Request preparation" review
+  decision on that opportunity (the fit report also needs a completed
+  score first). The tailored résumé renders into a real, ATS-conscious
+  template (`/config/profile.json` holds your static identity/education/
+  certifications — the AI never touches it) with the AI judging which
+  roles from your full work history earn full detail versus a compressed
+  one-line entry, targeting a two-page result
 - Approving or rejecting a generated document — permanent once decided;
   a flagged document can still be approved, since flagging is meant to
   surface a judgment call for you, not block one
+- Exporting any generated document as DOCX or PDF, regardless of its
+  approval status, with real formatting (headings, bold) instead of raw
+  Markdown characters
 - Automated test suite and GitHub Actions CI
 
 Not implemented yet:
 
-- DOCX/PDF export
 - Applications, email, or any external action
 
 ---
@@ -187,6 +192,7 @@ python -m venv .venv
 source .venv/bin/activate
 python -m pip install -r requirements.txt
 cp .env.example .env
+cp config/profile.json.example config/profile.json  # then fill in your real identity data
 uvicorn backend.app:app --host 127.0.0.1 --port 8000
 ```
 

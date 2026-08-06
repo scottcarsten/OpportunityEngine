@@ -1,13 +1,23 @@
 """Server-rendered manual opportunity workflow."""
 
+import re
 from pathlib import Path
-from typing import Literal, cast
+from typing import Any, Literal, cast
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Request, Response
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
+from backend.documents.export import render_docx, render_pdf
+from backend.documents.markdown_subset import parse as parse_markdown_subset
+from backend.documents.resume_render import (
+    parse_resume_content,
+    render_plain_text_preview,
+    render_resume_docx,
+    render_resume_pdf,
+)
 from backend.models import EngagementType, OpportunityInput, RemoteStatus, TaxType
+from backend.profile import load_profile
 from backend.services.document_service import DocumentService
 from backend.services.opportunity_service import OpportunityService
 from backend.services.resume_service import ResumeService
@@ -143,6 +153,12 @@ def opportunity_detail(
     if opportunity is None:
         raise HTTPException(status_code=404, detail="opportunity not found")
     service.mark_notifications_sent(opportunity_id)
+
+    for document in opportunity["generated_documents"]["tailored_resume"]:
+        structured = parse_resume_content(document["content"])
+        if structured is not None:
+            document["content"] = render_plain_text_preview(structured)
+
     return templates.TemplateResponse(
         request=request,
         name="opportunity_detail.html",
@@ -252,6 +268,14 @@ def generate_fit_report(request: Request, opportunity_id: int) -> RedirectRespon
     return RedirectResponse(url=f"/opportunities/{opportunity_id}", status_code=303)
 
 
+def _find_document(opportunity: dict, document_id: int) -> dict[str, Any] | None:
+    for documents in opportunity["generated_documents"].values():
+        for document in documents:
+            if document["id"] == document_id:
+                return document
+    return None
+
+
 @router.post("/opportunities/{opportunity_id}/documents/{document_id}/decision")
 async def decide_generated_document(
     request: Request, opportunity_id: int, document_id: int
@@ -260,12 +284,7 @@ async def decide_generated_document(
     opportunity = service.get_opportunity(opportunity_id)
     if opportunity is None:
         raise HTTPException(status_code=404, detail="opportunity not found")
-    owns_document = any(
-        document["id"] == document_id
-        for documents in opportunity["generated_documents"].values()
-        for document in documents
-    )
-    if not owns_document:
+    if _find_document(opportunity, document_id) is None:
         raise HTTPException(status_code=404, detail="document not found")
 
     form = await request.form()
@@ -280,6 +299,69 @@ async def decide_generated_document(
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
     return RedirectResponse(url=f"/opportunities/{opportunity_id}", status_code=303)
+
+
+def _export_filename(opportunity: dict, document: dict, extension: str) -> str:
+    organization = opportunity.get("organization_name") or "opportunity"
+    stem = f"{organization}-{document['document_type']}-v{document['version']}"
+    safe_stem = re.sub(r"[^A-Za-z0-9._-]+", "-", stem).strip("-") or "document"
+    return f"{safe_stem}.{extension}"
+
+
+def _render_export(request: Request, opportunity: dict, document: dict, fmt: str) -> bytes:
+    title = f"{document['document_type'].replace('_', ' ').title()} — {opportunity['title']}"
+    structured = (
+        parse_resume_content(document["content"])
+        if document["document_type"] == "tailored_resume"
+        else None
+    )
+    if structured is not None:
+        profile = load_profile(request.app.state.settings.profile_path)
+        return render_resume_docx(profile, structured) if fmt == "docx" else render_resume_pdf(
+            profile, structured
+        )
+    blocks = parse_markdown_subset(document["content"] or "")
+    return render_docx(title, blocks) if fmt == "docx" else render_pdf(title, blocks)
+
+
+@router.get("/opportunities/{opportunity_id}/documents/{document_id}/export.docx")
+def export_document_docx(request: Request, opportunity_id: int, document_id: int) -> Response:
+    service = _service(request)
+    opportunity = service.get_opportunity(opportunity_id)
+    if opportunity is None:
+        raise HTTPException(status_code=404, detail="opportunity not found")
+    document = _find_document(opportunity, document_id)
+    if document is None:
+        raise HTTPException(status_code=404, detail="document not found")
+
+    content = _render_export(request, opportunity, document, "docx")
+    filename = _export_filename(opportunity, document, "docx")
+    return Response(
+        content=content,
+        media_type=(
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        ),
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@router.get("/opportunities/{opportunity_id}/documents/{document_id}/export.pdf")
+def export_document_pdf(request: Request, opportunity_id: int, document_id: int) -> Response:
+    service = _service(request)
+    opportunity = service.get_opportunity(opportunity_id)
+    if opportunity is None:
+        raise HTTPException(status_code=404, detail="opportunity not found")
+    document = _find_document(opportunity, document_id)
+    if document is None:
+        raise HTTPException(status_code=404, detail="document not found")
+
+    content = _render_export(request, opportunity, document, "pdf")
+    filename = _export_filename(opportunity, document, "pdf")
+    return Response(
+        content=content,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 def _choice(value: str, allowed: set[str]) -> str:
