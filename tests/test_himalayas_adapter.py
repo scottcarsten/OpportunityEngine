@@ -70,3 +70,21 @@ def test_normalize_strips_html_from_description() -> None:
 
     assert "<" not in supplied.description
     assert "Azure and AWS" in supplied.description
+
+
+def test_normalize_parses_expires_at_from_expiry_date() -> None:
+    adapter = _adapter()
+    record = adapter.fetch()[0]
+
+    supplied = adapter.normalize(record)
+
+    assert supplied.expires_at == "2026-08-21T07:24:44.000000Z"
+
+
+def test_normalize_leaves_expires_at_none_when_missing() -> None:
+    adapter = _adapter()
+    record = adapter.fetch()[1]
+
+    supplied = adapter.normalize(record)
+
+    assert supplied.expires_at is None

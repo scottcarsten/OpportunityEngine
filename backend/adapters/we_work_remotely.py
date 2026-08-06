@@ -25,7 +25,7 @@ from backend.adapters.signal_extraction import (
     extract_travel_signal,
 )
 from backend.models import EngagementType, OpportunityInput
-from backend.timeutil import now_iso
+from backend.timeutil import now_iso, parse_rfc822
 
 DEFAULT_FEED_URL = "https://weworkremotely.com/categories/remote-devops-sysadmin-jobs.rss"
 _USER_AGENT = "OpportunityEngine/0.1 (personal opportunity-research tool)"
@@ -131,4 +131,5 @@ class WeWorkRemotelyAdapter:
             requires_relocation=extract_relocation_signal(description),
             requires_clearance=extract_clearance_signal(description),
             replaces_full_time_work=replaces_full_time_work,
+            expires_at=parse_rfc822(fields.get("expires_at")),
         )

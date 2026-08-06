@@ -234,10 +234,22 @@ the system still never submitting anything itself.
 
 - [ ] Add configurable internal notification channels.
 - [ ] Add review queues and follow-up reminders.
-- [ ] Add opportunity aging and stale-listing detection.
+- [x] Add opportunity aging and stale-listing detection.
 - [ ] Add reporting for pipeline volume, quality, and estimated value.
 - [ ] Add explicit approval receipts for restricted actions.
 - [ ] Design—but do not silently enable—external integrations.
+
+Opportunity aging and stale-listing detection is v0.3's first slice.
+Digging into the schema before building anything found `expires_at`,
+`last_seen_at`, and the `expired`/`closed` lifecycle states already
+fully modeled and never wired up — the same pattern every v0.2 slice
+ran into. `OpportunityService.expire_stale_opportunities()` now
+transitions `new`/`eligible` opportunities whose source-provided
+`expires_at` has passed (populated from We Work Remotely's and
+Himalayas' real feed data) to `expired`, run automatically after every
+`python -m backend.cli collect <source>`; anything Scott has already
+decided on is never touched. The dashboard shows a new "Age" column and
+an "Expired" filter. See `OE-ADR-028`.
 
 ## v0.4 — Quality, resilience, and deployment
 

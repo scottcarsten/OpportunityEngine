@@ -37,4 +37,5 @@ class OpportunityInput:
     requires_relocation: bool | None
     requires_clearance: bool | None
     replaces_full_time_work: bool | None
+    expires_at: str | None = None
 

@@ -31,6 +31,7 @@
   ("deferred", "Deferred", "secondary"),
   ("rejected", "Rejected", "dark"),
   ("preparing", "Preparing", "info"),
+  ("expired", "Expired", "dark"),
 ] %}
 {% set engagement_chips = [
   ("contract", "Contract"),
@@ -100,6 +101,7 @@
         <th>Opportunity</th>
         <th>Work type</th>
         <th>Remote</th>
+        <th>Age</th>
         <th>Status</th>
         <th></th>
       </tr>
@@ -120,6 +122,9 @@
           {% endif %}
         </td>
         <td>{{ opportunity.remote_status|title }}</td>
+        <td class="small text-secondary">
+          {{ opportunity.age_days }} day{{ "s" if opportunity.age_days != 1 else "" }}
+        </td>
         <td>
           {% if opportunity.lifecycle_status == "eligible" %}
             <span class="badge text-bg-success">Eligible</span>
@@ -133,6 +138,8 @@
             <span class="badge text-bg-dark">Rejected</span>
           {% elif opportunity.lifecycle_status == "preparing" %}
             <span class="badge text-bg-info">Preparing</span>
+          {% elif opportunity.lifecycle_status == "expired" %}
+            <span class="badge text-bg-dark">Expired</span>
           {% else %}
             <span class="badge text-bg-warning">Manual review</span>
           {% endif %}

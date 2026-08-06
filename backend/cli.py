@@ -15,6 +15,7 @@ from backend.config import get_settings
 from backend.database import Database
 from backend.services.collection_service import CollectionService
 from backend.services.constitution_service import load_constitution
+from backend.services.opportunity_service import OpportunityService
 
 ADAPTERS = {
     "we_work_remotely": WeWorkRemotelyAdapter,
@@ -41,6 +42,11 @@ def main(argv: list[str] | None = None) -> int:
         adapter = ADAPTERS[args.source]()
         service = CollectionService(database, constitution)
         result = service.run(adapter)
+        # Runs after every collection, not just this source's — expiration
+        # only depends on expires_at having passed, not on which source was
+        # just refreshed, so it's always safe to sweep table-wide (OE-ADR-028).
+        expired_ids = OpportunityService(database, constitution).expire_stale_opportunities()
+        result["expired_count"] = len(expired_ids)
     finally:
         database.close()
 

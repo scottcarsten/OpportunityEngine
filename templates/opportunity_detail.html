@@ -35,6 +35,8 @@
     <span class="badge text-bg-dark fs-6">Rejected</span>
   {% elif opportunity.lifecycle_status == "preparing" %}
     <span class="badge text-bg-info fs-6">Preparing</span>
+  {% elif opportunity.lifecycle_status == "expired" %}
+    <span class="badge text-bg-dark fs-6">Expired</span>
   {% else %}
     <span class="badge text-bg-warning fs-6">Manual review</span>
   {% endif %}
@@ -57,6 +59,15 @@
         <dd class="col-sm-8">{{ opportunity.location_text or "Not supplied" }}</dd>
         <dt class="col-sm-4">Schedule</dt>
         <dd class="col-sm-8">{{ opportunity.schedule_text or "Not supplied" }}</dd>
+        {% if opportunity.expires_at %}
+        <dt class="col-sm-4">Listing expires</dt>
+        <dd class="col-sm-8">
+          {{ opportunity.expires_at }}
+          {% if opportunity.lifecycle_status == "expired" %}
+            <span class="badge text-bg-dark ms-1">Expired</span>
+          {% endif %}
+        </dd>
+        {% endif %}
         <dt class="col-sm-4">Source</dt>
         <dd class="col-sm-8">
           {% if opportunity.source %}

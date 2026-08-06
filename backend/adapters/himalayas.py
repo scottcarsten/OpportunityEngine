@@ -27,7 +27,7 @@ from backend.adapters.signal_extraction import (
     extract_travel_signal,
 )
 from backend.models import EngagementType, OpportunityInput
-from backend.timeutil import now_iso
+from backend.timeutil import from_unix_timestamp, now_iso
 
 SEARCH_URL = "https://himalayas.app/jobs/api/search"
 _USER_AGENT = "OpportunityEngine/0.1 (personal opportunity-research tool)"
@@ -144,4 +144,5 @@ class HimalayasAdapter:
             requires_relocation=extract_relocation_signal(description),
             requires_clearance=extract_clearance_signal(description),
             replaces_full_time_work=replaces_full_time_work,
+            expires_at=from_unix_timestamp(job.get("expiryDate")),
         )

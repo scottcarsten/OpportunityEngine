@@ -1256,3 +1256,76 @@ than the résumé's competencies/experience structure.
   generic Markdown-subset renderer — appropriate, since it's read
   internally by Scott, not submitted anywhere, and its format doesn't
   need to be constrained the way an externally-facing document's does.
+
+---
+
+## OE-ADR-028 — Opportunity aging and explicit stale-listing expiration
+
+**Status:** Accepted
+**Date:** 2026-08-06
+
+### Context
+
+v0.3's first item. Checking the schema before designing anything found
+the same pattern as every v0.2 slice: this was already fully modeled and
+never wired up. `opportunities.expires_at` is a real column,
+`lifecycle_status`'s check constraint already includes `'expired'`/
+`'closed'`, and `opportunities.last_seen_at` already exists with its own
+index — none of it was ever written to. Two concrete gaps confirmed by
+reading the code, not assumed:
+
+1. `OpportunityService._ingest`'s duplicate-fingerprint short-circuit
+   never bumped `opportunities.last_seen_at` on re-collection, unlike
+   `source_records.last_seen_at`, which `CollectionService._ingest_one`
+   already updates correctly. A real, independent bug.
+2. We Work Remotely's RSS (`<expires_at>`) and Himalayas' JSON API
+   (`expiryDate`, a Unix timestamp) both provide real listing-expiration
+   data that no adapter captured; `OpportunityInput` didn't even have
+   the field. Remotive and Jobspresso expose no equivalent.
+
+### Decision
+
+- Fixed the `last_seen_at` bug — `_ingest`'s existing-fingerprint branch
+  now bumps it. Independently correct regardless of the rest of this ADR.
+- **This slice ships only explicit-`expires_at`-based expiration.** A
+  second possible signal — inferring staleness from `last_seen_at` no
+  longer advancing across collection runs — was considered and
+  deliberately deferred: it's only safely comparable when a listing's
+  own source was actually just re-collected, and Scott doesn't run every
+  source's `collect` every day, so a naive global "hasn't been seen in N
+  days" check across all sources would produce false positives. Explicit
+  `expires_at` has no such ambiguity.
+- `OpportunityInput.expires_at` defaults to `None` (not a required field)
+  — deliberately, to avoid forcing every existing call site (five-plus
+  test files, three adapters with no expiry data, manual entry) to
+  thread through a value that's `None` in the overwhelming majority of
+  cases. `OpportunityService._normalize` and `_insert_opportunity` both
+  carry it through explicitly, since silently dropping it during
+  normalization would be a real, easy-to-miss bug.
+- `OpportunityService.expire_stale_opportunities()` only ever transitions
+  `lifecycle_status IN ('new', 'eligible')` — the same "never override a
+  decision Scott already made" boundary document approval states drew
+  (`OE-ADR-024`). Shortlisted/deferred/rejected/preparing opportunities
+  are untouched even if their `expires_at` has passed; audited
+  (`event_type="opportunity_expired"`, `actor_type="system"` — the first
+  system-authored audit event in this codebase, everything before this
+  was `"scott"`).
+- Triggered from `python -m backend.cli collect <source>`, after
+  `CollectionService.run()`, table-wide (not scoped to the just-collected
+  source — safe, since `expires_at` comparison doesn't depend on which
+  source was just refreshed). Deliberately not a side effect of loading
+  the dashboard — `GET /` stays read-only, and a real lifecycle
+  transition belongs at an observable, intentional point, matching
+  `OE-ADR-010`'s CLI-triggered-jobs pattern.
+- Dashboard gets a new "Age" column (days since `created_at`, computed in
+  `OpportunityService.list_opportunities`, not in the template — Jinja
+  has no built-in date arithmetic) and an `"expired"` filter chip/badge.
+
+### Consequences
+
+- Scott can now see how long anything has sat unreviewed, and listings
+  that have genuinely expired at the source stop cluttering `new`/
+  `eligible` without ever touching something he's already acted on.
+- Inferred staleness (from collection absence, not an explicit date) and
+  the `'closed'` lifecycle state (likely tied to the "track what I've
+  applied to" idea floated separately) remain open follow-on work.

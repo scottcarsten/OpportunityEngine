@@ -3,6 +3,7 @@
 import hashlib
 import json
 from dataclasses import asdict
+from datetime import datetime, timezone
 from difflib import SequenceMatcher
 from pathlib import Path
 from typing import Any, Literal
@@ -30,6 +31,15 @@ from backend.models import OpportunityInput
 from backend.services.audit_service import AuditEvent, AuditService
 from backend.services.constitution_service import Constitution
 from backend.timeutil import now_iso
+
+
+def _age_days(created_at: str) -> int:
+    """Whole days since `created_at` (an `now_iso()`-formatted timestamp)."""
+    created = datetime.strptime(created_at, "%Y-%m-%dT%H:%M:%S.%fZ").replace(
+        tzinfo=timezone.utc
+    )
+    return (datetime.now(timezone.utc) - created).days
+
 
 # A likely-duplicate match must be at or above this ratio over the same
 # organization+title+location+description identity string used for the
@@ -107,6 +117,12 @@ class OpportunityService:
             select(Opportunity.id).where(Opportunity.fingerprint == fingerprint)
         ).scalar_one_or_none()
         if existing_id is not None:
+            session.execute(
+                update(Opportunity)
+                .where(Opportunity.id == existing_id)
+                .values(last_seen_at=now_iso())
+            )
+            session.commit()
             return int(existing_id), False
 
         try:
@@ -275,6 +291,44 @@ class OpportunityService:
             )
             session.commit()
 
+    def expire_stale_opportunities(self) -> list[int]:
+        """Move `new`/`eligible` opportunities whose `expires_at` has passed to `expired`.
+
+        Only ever touches `lifecycle_status IN ('new', 'eligible')` —
+        anything Scott has already decided on (shortlisted/deferred/
+        rejected/preparing) is left alone, same "don't override human
+        judgment" principle as document approval states (`OE-ADR-024`).
+        `expires_at` is only populated when a source actually supplies it
+        (`OE-ADR-028`); opportunities without one are never auto-expired.
+        """
+        now = now_iso()
+        with self.database.session() as session:
+            candidate_ids = session.execute(
+                select(Opportunity.id).where(
+                    Opportunity.lifecycle_status.in_(("new", "eligible")),
+                    Opportunity.expires_at.is_not(None),
+                    Opportunity.expires_at < now,
+                )
+            ).scalars().all()
+            for opportunity_id in candidate_ids:
+                session.execute(
+                    update(Opportunity)
+                    .where(Opportunity.id == opportunity_id)
+                    .values(lifecycle_status="expired")
+                )
+                AuditService(session).record(
+                    AuditEvent(
+                        event_type="opportunity_expired",
+                        actor_type="system",
+                        entity_type="opportunity",
+                        entity_id=opportunity_id,
+                        constitution_version=self.constitution.version,
+                        summary="Listing's stated expiration date has passed.",
+                    )
+                )
+            session.commit()
+            return list(candidate_ids)
+
     def count_pending_review(self) -> int:
         """Count opportunities with a queued internal notification."""
         with self.database.session() as session:
@@ -315,7 +369,7 @@ class OpportunityService:
 
         with self.database.session() as session:
             rows = session.execute(query).mappings().all()
-        return [dict(row) for row in rows]
+        return [{**dict(row), "age_days": _age_days(row["created_at"])} for row in rows]
 
     def get_opportunity(self, opportunity_id: int) -> dict[str, Any] | None:
         """Return one opportunity with its constitutional evaluations."""
@@ -509,6 +563,7 @@ class OpportunityService:
             requires_relocation=supplied.requires_relocation,
             requires_clearance=supplied.requires_clearance,
             replaces_full_time_work=supplied.replaces_full_time_work,
+            expires_at=supplied.expires_at,
         )
 
     @staticmethod
@@ -622,6 +677,7 @@ class OpportunityService:
             requires_relocation=opportunity.requires_relocation,
             requires_clearance=opportunity.requires_clearance,
             replaces_full_time_work=opportunity.replaces_full_time_work,
+            expires_at=opportunity.expires_at,
         )
         session.add(row)
         session.flush()

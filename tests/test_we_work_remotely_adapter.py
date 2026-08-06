@@ -108,3 +108,12 @@ def test_normalize_extracts_negative_travel_signal() -> None:
     supplied = adapter.normalize(record)
 
     assert supplied.requires_travel is False
+
+
+def test_normalize_parses_expires_at_from_the_feed() -> None:
+    adapter = _adapter()
+    record = adapter.fetch()[0]
+
+    supplied = adapter.normalize(record)
+
+    assert supplied.expires_at == "2026-09-02T07:30:43.000000Z"
