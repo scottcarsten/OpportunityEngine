@@ -14,7 +14,7 @@
       <skills></skills>
       <category>DevOps and Sysadmin</category>
       <type>Contract</type>
-      <description>&lt;p&gt;&lt;strong&gt;About Acme:&lt;/strong&gt; We run &lt;em&gt;infrastructure&lt;/em&gt; at scale.&lt;/p&gt;&lt;ul&gt;&lt;li&gt;Manage Azure and AWS&lt;/li&gt;&lt;li&gt;Own identity and access&lt;/li&gt;&lt;/ul&gt;</description>
+      <description>&lt;p&gt;&lt;strong&gt;About Acme:&lt;/strong&gt; We run &lt;em&gt;infrastructure&lt;/em&gt; at scale.&lt;/p&gt;&lt;ul&gt;&lt;li&gt;Manage Azure and AWS&lt;/li&gt;&lt;li&gt;Own identity and access&lt;/li&gt;&lt;li&gt;Fully remote, no travel required&lt;/li&gt;&lt;/ul&gt;</description>
       <pubDate>Mon, 03 Aug 2026 07:30:43 +0000</pubDate>
       <expires_at>Wed, 02 Sep 2026 07:30:43 +0000</expires_at>
       <guid>https://weworkremotely.com/remote-jobs/acme-corp-senior-cloud-administrator</guid>
@@ -33,6 +33,20 @@
       <expires_at>Thu, 03 Sep 2026 09:00:00 +0000</expires_at>
       <guid>https://weworkremotely.com/remote-jobs/overseas-logistics-coordinator</guid>
       <link>https://weworkremotely.com/remote-jobs/overseas-logistics-coordinator</link>
+    </item>
+    <item>
+      <title>Globex Inc: Senior Security Engineer</title>
+      <region>Anywhere in the World</region>
+      <country></country>
+      <state></state>
+      <skills></skills>
+      <category>DevOps and Sysadmin</category>
+      <type>Contract</type>
+      <description>&lt;p&gt;Must hold an active security clearance. Some travel required for client visits. Candidates must relocate to our hub city.&lt;/p&gt;</description>
+      <pubDate>Wed, 05 Aug 2026 10:00:00 +0000</pubDate>
+      <expires_at>Fri, 04 Sep 2026 10:00:00 +0000</expires_at>
+      <guid>https://weworkremotely.com/remote-jobs/globex-senior-security-engineer</guid>
+      <link>https://weworkremotely.com/remote-jobs/globex-senior-security-engineer</link>
     </item>
   </channel>
 </rss>

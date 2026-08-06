@@ -75,6 +75,15 @@ Completed: first source is We Work Remotely's DevOps and Sysadmin RSS feed
 `python -m backend.cli collect we_work_remotely`
 (`OE-ADR-015`). Tracked by Issue #4.
 
+A live collection run surfaced that normalization was leaving
+travel/relocation/clearance/full-time-replacement unknown even when the
+listing text answered them, forcing a manual review of every collected
+listing. `backend/adapters/signal_extraction.py` now extracts those
+signals deterministically — free-text pattern matching for the first
+three, and a direct mapping from the RSS's already-structured `<type>`
+field for full-time-replacement — while still defaulting to unknown
+(manual review) whenever a listing doesn't clearly say. See `OE-ADR-021`.
+
 ### Milestone 3 — Deduplication and hard filters
 
 - [x] Generate deterministic opportunity fingerprints.

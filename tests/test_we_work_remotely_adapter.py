@@ -15,7 +15,7 @@ def _adapter() -> WeWorkRemotelyAdapter:
 def test_fetch_returns_one_record_per_item_with_raw_evidence() -> None:
     records = _adapter().fetch()
 
-    assert len(records) == 2
+    assert len(records) == 3
     first = records[0]
     assert first.external_id == "https://weworkremotely.com/remote-jobs/acme-corp-senior-cloud-administrator"
     assert first.canonical_url == first.external_id
@@ -55,7 +55,7 @@ def test_normalize_falls_back_when_title_has_no_colon() -> None:
     assert supplied.title == "Overseas Logistics Coordinator"
 
 
-def test_normalize_marks_unavailable_fields_unknown() -> None:
+def test_normalize_marks_fields_the_feed_never_supplies_unknown() -> None:
     adapter = _adapter()
     record = adapter.fetch()[0]
 
@@ -63,7 +63,48 @@ def test_normalize_marks_unavailable_fields_unknown() -> None:
 
     assert supplied.tax_type == "unknown"
     assert supplied.compensation_min is None
+
+
+def test_normalize_derives_full_time_replacement_from_engagement_type() -> None:
+    adapter = _adapter()
+    records = adapter.fetch()
+
+    contract = adapter.normalize(records[0])
+    full_time = adapter.normalize(records[1])
+
+    assert contract.engagement_type == "contract"
+    assert contract.replaces_full_time_work is False
+    assert full_time.engagement_type == "full_time"
+    assert full_time.replaces_full_time_work is True
+
+
+def test_normalize_leaves_travel_signal_unknown_when_unmentioned() -> None:
+    adapter = _adapter()
+    record = adapter.fetch()[1]
+
+    supplied = adapter.normalize(record)
+
     assert supplied.requires_travel is None
     assert supplied.requires_relocation is None
     assert supplied.requires_clearance is None
-    assert supplied.replaces_full_time_work is None
+    assert supplied.replaces_full_time_work is True
+
+
+def test_normalize_extracts_signals_from_description_text() -> None:
+    adapter = _adapter()
+    record = adapter.fetch()[2]
+
+    supplied = adapter.normalize(record)
+
+    assert supplied.requires_clearance is True
+    assert supplied.requires_travel is True
+    assert supplied.requires_relocation is True
+
+
+def test_normalize_extracts_negative_travel_signal() -> None:
+    adapter = _adapter()
+    record = adapter.fetch()[0]
+
+    supplied = adapter.normalize(record)
+
+    assert supplied.requires_travel is False

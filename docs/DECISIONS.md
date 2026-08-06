@@ -745,3 +745,66 @@ states* are a later slice, not this one.
   `"approved"`/`"rejected"`, and the immutability trigger that should
   follow) and DOCX/PDF export remain open v0.2 items — this slice
   produces a plain-text draft only.
+
+---
+
+## OE-ADR-021 — Deterministic signal extraction fills in hard-filter unknowns
+
+**Status:** Accepted
+**Date:** 2026-08-06
+
+### Context
+
+Live-collecting from We Work Remotely (`OE-ADR-015`) during the tailored-
+résumé smoke test showed every one of 50 real listings landing in
+`lifecycle_status = "new"`: `WeWorkRemotelyAdapter.normalize()`
+unconditionally mapped `requires_travel`, `requires_relocation`,
+`requires_clearance`, and `replaces_full_time_work` to `None`, even when a
+listing's own description plainly answered them. The feed genuinely has
+no structured fields for the first three, but its `<type>` field
+(Full-Time/Contract/Part-Time/Temporary) is structured and was already
+being parsed into `engagement_type` — just never used for the
+full-time-replacement filter. The net effect: the tool that's supposed to
+do the reading was making Scott manually judge every single listing
+himself, which is the opposite of the point.
+
+### Decision
+
+- `backend/adapters/signal_extraction.py` adds three source-agnostic,
+  deterministic functions — `extract_travel_signal`,
+  `extract_relocation_signal`, `extract_clearance_signal` — each scanning
+  free text against a small curated phrase list for "definitely required"
+  and "definitely not required," returning `None` otherwise. Per
+  `OE-ADR-006`, hard filters run deterministically before any AI
+  judgment; this stays pattern-matching, not a model call, so that
+  guarantee is unchanged.
+- **Precision over recall is the explicit bias.** Many descriptions won't
+  match anything and stay `None` — same manual-review outcome as before.
+  That's fine. Guessing a boolean wrong is not: it could let a
+  travel-required or clearance-required listing silently pass a hard
+  filter Scott is relying on. The phrase lists are intentionally narrow.
+- `replaces_full_time_work` now derives directly from `engagement_type`
+  (`True` for `full_time`, `False` for `contract`/`part_time`/
+  `temporary`, `None` for `unknown`) — no text scanning needed, since
+  the RSS `<type>` field is already structured data, not free text.
+- **Confirmed with Scott before implementing:** this means a listing
+  explicitly tagged "Full-Time" now auto-fails the full-time-replacement
+  filter and lands `ineligible` instead of sitting in `"new"`. He
+  confirmed this matches his actual goal — stacking side-hustle, 1099,
+  hourly, and evening/weekend work around his existing job, not finding a
+  replacement for it — and the existing audited override
+  (`OpportunityService.override_lifecycle_status`, `OE-ADR-016`) still
+  lets him reverse any single case by hand.
+
+### Consequences
+
+- Fewer real, collected listings land in `"new"` needing a manual
+  eligibility call before Scott can even see a score — the tool reads the
+  listing text so he doesn't have to.
+- A definitive `True`/`False` from these functions carries the same
+  weight as a hand-entered answer in the manual-entry form: it can now
+  fail a listing outright. The narrow phrase lists exist specifically to
+  keep that trustworthy.
+- Any future source adapter facing the same "free text has the answer,
+  structured fields don't" gap reuses
+  `backend/adapters/signal_extraction.py` rather than re-solving it.

@@ -1,10 +1,15 @@
 """We Work Remotely: DevOps and Sysadmin RSS adapter.
 
 The feed is publicly syndicated for exactly this purpose and needs no API
-key. It publishes no compensation, tax-type, schedule, or travel/relocation/
-clearance/full-time-replacement data, so `normalize()` maps those to
-`"unknown"`/`None` — the existing hard-filter logic already routes unknown
-values to `manual_review` rather than auto-approving them.
+key. It publishes no compensation, tax-type, or schedule data, so
+`normalize()` maps those to `"unknown"`/`None`. Travel, relocation, and
+clearance requirements aren't structured fields either, but are often
+stated in the free-text description — `normalize()` runs deterministic
+pattern matching over it (`backend/adapters/signal_extraction.py`,
+`OE-ADR-021`) rather than leaving those permanently unknown. Whatever
+isn't caught still falls back to `None`, and the existing hard-filter
+logic routes unknown values to `manual_review` rather than
+auto-approving them.
 """
 
 import xml.etree.ElementTree as ET
@@ -14,6 +19,11 @@ from typing import Callable
 import httpx
 
 from backend.adapters.base import RawOpportunityRecord
+from backend.adapters.signal_extraction import (
+    extract_clearance_signal,
+    extract_relocation_signal,
+    extract_travel_signal,
+)
 from backend.models import EngagementType, OpportunityInput
 from backend.timeutil import now_iso
 
@@ -113,6 +123,17 @@ class WeWorkRemotelyAdapter:
 
         description = _strip_html(fields.get("description", ""))
 
+        # The RSS <type> field is structured, not free text: an explicit
+        # "Full-Time" listing is a permanent-employment role that would
+        # replace Scott's day job, so it maps directly rather than needing
+        # a text scan. Unknown engagement types stay unknown here too.
+        if engagement_type == "full_time":
+            replaces_full_time_work = True
+        elif engagement_type == "unknown":
+            replaces_full_time_work = None
+        else:
+            replaces_full_time_work = False
+
         return OpportunityInput(
             title=title,
             organization_name=organization_name,
@@ -126,8 +147,8 @@ class WeWorkRemotelyAdapter:
             compensation_min=None,
             compensation_max=None,
             compensation_period=None,
-            requires_travel=None,
-            requires_relocation=None,
-            requires_clearance=None,
-            replaces_full_time_work=None,
+            requires_travel=extract_travel_signal(description),
+            requires_relocation=extract_relocation_signal(description),
+            requires_clearance=extract_clearance_signal(description),
+            replaces_full_time_work=replaces_full_time_work,
         )
