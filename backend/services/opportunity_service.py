@@ -284,21 +284,37 @@ class OpportunityService:
                 .where(Notification.status == "queued")
             ).scalar_one()
 
-    def list_opportunities(self) -> list[dict[str, Any]]:
-        """Return opportunities newest first for the review inbox."""
+    def list_opportunities(
+        self,
+        lifecycle_status: str | None = None,
+        engagement_type: str | None = None,
+        tax_type: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """Return opportunities newest first for the review inbox.
+
+        Each filter is an optional exact-match narrowing; combining
+        several applies all of them (SQL AND), matching stacked dashboard
+        filter chips. `None` means no constraint on that dimension.
+        """
+        query = select(
+            Opportunity.id,
+            Opportunity.title,
+            Opportunity.organization_name,
+            Opportunity.remote_status,
+            Opportunity.engagement_type,
+            Opportunity.tax_type,
+            Opportunity.lifecycle_status,
+            Opportunity.created_at,
+        ).order_by(Opportunity.created_at.desc(), Opportunity.id.desc())
+        if lifecycle_status is not None:
+            query = query.where(Opportunity.lifecycle_status == lifecycle_status)
+        if engagement_type is not None:
+            query = query.where(Opportunity.engagement_type == engagement_type)
+        if tax_type is not None:
+            query = query.where(Opportunity.tax_type == tax_type)
+
         with self.database.session() as session:
-            rows = session.execute(
-                select(
-                    Opportunity.id,
-                    Opportunity.title,
-                    Opportunity.organization_name,
-                    Opportunity.remote_status,
-                    Opportunity.engagement_type,
-                    Opportunity.tax_type,
-                    Opportunity.lifecycle_status,
-                    Opportunity.created_at,
-                ).order_by(Opportunity.created_at.desc(), Opportunity.id.desc())
-            ).mappings().all()
+            rows = session.execute(query).mappings().all()
         return [dict(row) for row in rows]
 
     def get_opportunity(self, opportunity_id: int) -> dict[str, Any] | None:

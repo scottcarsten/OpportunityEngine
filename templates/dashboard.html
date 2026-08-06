@@ -15,6 +15,83 @@
 </div>
 {% endif %}
 
+{% macro filter_link(status_value, engagement_value, tax_value) -%}
+{%- set params = [] -%}
+{%- if status_value %}{% set _ = params.append('status=' + status_value) %}{% endif -%}
+{%- if engagement_value %}{% set _ = params.append('engagement_type=' + engagement_value) %}{% endif -%}
+{%- if tax_value %}{% set _ = params.append('tax_type=' + tax_value) %}{% endif -%}
+/{% if params %}?{{ params|join('&') }}{% endif %}
+{%- endmacro %}
+
+{% set status_chips = [
+  ("new", "New", "warning"),
+  ("eligible", "Eligible", "success"),
+  ("ineligible", "Ineligible", "danger"),
+  ("shortlisted", "Shortlisted", "primary"),
+  ("deferred", "Deferred", "secondary"),
+  ("rejected", "Rejected", "dark"),
+  ("preparing", "Preparing", "info"),
+] %}
+{% set engagement_chips = [
+  ("contract", "Contract"),
+  ("consulting", "Consulting"),
+  ("project", "Project"),
+  ("part_time", "Part time"),
+  ("full_time", "Full time"),
+  ("temporary", "Temporary"),
+  ("unknown", "Unspecified"),
+] %}
+{% set tax_chips = [
+  ("1099", "1099"),
+  ("w2", "W2"),
+  ("corp_to_corp", "Corp-to-corp"),
+  ("unknown", "Unspecified"),
+] %}
+
+<div class="bg-white border rounded p-3 mb-4">
+  <div class="d-flex flex-wrap align-items-center gap-2 mb-2">
+    <span class="text-secondary small me-1">Status:</span>
+    {% for value, label, color in status_chips %}
+      {% if current_status == value %}
+      <a class="btn btn-sm btn-{{ color }}"
+         href="{{ filter_link(none, current_engagement_type, current_tax_type) }}">{{ label }}</a>
+      {% else %}
+      <a class="btn btn-sm btn-outline-{{ color }}"
+         href="{{ filter_link(value, current_engagement_type, current_tax_type) }}">{{ label }}</a>
+      {% endif %}
+    {% endfor %}
+  </div>
+  <div class="d-flex flex-wrap align-items-center gap-2 mb-2">
+    <span class="text-secondary small me-1">Engagement:</span>
+    {% for value, label in engagement_chips %}
+      {% if current_engagement_type == value %}
+      <a class="btn btn-sm btn-primary"
+         href="{{ filter_link(current_status, none, current_tax_type) }}">{{ label }}</a>
+      {% else %}
+      <a class="btn btn-sm btn-outline-primary"
+         href="{{ filter_link(current_status, value, current_tax_type) }}">{{ label }}</a>
+      {% endif %}
+    {% endfor %}
+  </div>
+  <div class="d-flex flex-wrap align-items-center gap-2">
+    <span class="text-secondary small me-1">Tax type:</span>
+    {% for value, label in tax_chips %}
+      {% if current_tax_type == value %}
+      <a class="btn btn-sm btn-primary"
+         href="{{ filter_link(current_status, current_engagement_type, none) }}">{{ label }}</a>
+      {% else %}
+      <a class="btn btn-sm btn-outline-primary"
+         href="{{ filter_link(current_status, current_engagement_type, value) }}">{{ label }}</a>
+      {% endif %}
+    {% endfor %}
+  </div>
+  {% if current_status or current_engagement_type or current_tax_type %}
+  <div class="mt-2">
+    <a class="small" href="/">Clear filters</a>
+  </div>
+  {% endif %}
+</div>
+
 {% if opportunities %}
 <div class="table-responsive bg-white border rounded">
   <table class="table table-hover align-middle mb-0">
@@ -68,6 +145,11 @@
     {% endfor %}
     </tbody>
   </table>
+</div>
+{% elif current_status or current_engagement_type or current_tax_type %}
+<div class="p-5 text-center bg-white border rounded">
+  <h2 class="h4">No opportunities match these filters</h2>
+  <a class="small" href="/">Clear filters</a>
 </div>
 {% else %}
 <div class="p-5 text-center bg-white border rounded">

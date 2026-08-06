@@ -49,14 +49,26 @@ def _document_service(request: Request) -> DocumentService:
 
 
 @router.get("/", response_class=HTMLResponse)
-def dashboard(request: Request) -> HTMLResponse:
+def dashboard(
+    request: Request,
+    status: str | None = None,
+    engagement_type: str | None = None,
+    tax_type: str | None = None,
+) -> HTMLResponse:
     service = _service(request)
     return templates.TemplateResponse(
         request=request,
         name="dashboard.html",
         context={
-            "opportunities": service.list_opportunities(),
+            "opportunities": service.list_opportunities(
+                lifecycle_status=status,
+                engagement_type=engagement_type,
+                tax_type=tax_type,
+            ),
             "needs_review_count": service.count_pending_review(),
+            "current_status": status,
+            "current_engagement_type": engagement_type,
+            "current_tax_type": tax_type,
         },
     )
 

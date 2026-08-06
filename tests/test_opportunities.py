@@ -69,6 +69,59 @@ def test_travel_requirement_is_ineligible(client: TestClient) -> None:
     assert "The opportunity must not require travel." in detail.text
 
 
+def test_dashboard_status_filter_narrows_list(client: TestClient) -> None:
+    client.post("/opportunities", data=_form(title="Eligible Contract Role"))
+    client.post(
+        "/opportunities",
+        data=_form(title="Ineligible Traveling Role", requires_travel="yes"),
+    )
+
+    filtered = client.get("/?status=ineligible")
+    assert filtered.status_code == 200
+    assert "Ineligible Traveling Role" in filtered.text
+    assert "Eligible Contract Role" not in filtered.text
+
+
+def test_dashboard_combined_status_and_engagement_filter(client: TestClient) -> None:
+    client.post(
+        "/opportunities",
+        data=_form(
+            title="Ineligible Full Time Role",
+            engagement_type="full_time",
+            replaces_full_time_work="yes",
+        ),
+    )
+    client.post(
+        "/opportunities",
+        data=_form(
+            title="Ineligible Traveling Contract Role", requires_travel="yes"
+        ),
+    )
+
+    filtered = client.get("/?status=ineligible&engagement_type=full_time")
+    assert filtered.status_code == 200
+    assert "Ineligible Full Time Role" in filtered.text
+    assert "Ineligible Traveling Contract Role" not in filtered.text
+
+
+def test_dashboard_tax_type_filter(client: TestClient) -> None:
+    client.post("/opportunities", data=_form(title="1099 Role", tax_type="1099"))
+    client.post("/opportunities", data=_form(title="W2 Role", tax_type="w2"))
+
+    filtered = client.get("/?tax_type=w2")
+    assert filtered.status_code == 200
+    assert "W2 Role" in filtered.text
+    assert "1099 Role" not in filtered.text
+
+
+def test_dashboard_no_matches_shows_clear_filters_message(client: TestClient) -> None:
+    client.post("/opportunities", data=_form())
+
+    filtered = client.get("/?status=rejected")
+    assert filtered.status_code == 200
+    assert "No opportunities match these filters" in filtered.text
+
+
 def test_unknown_requirement_requires_manual_review(client: TestClient) -> None:
     response = client.post(
         "/opportunities",
