@@ -232,12 +232,19 @@ the system still never submitting anything itself.
 
 **Goal:** Improve the review experience while keeping all external execution human-controlled.
 
-- [ ] Add configurable internal notification channels.
+- [x] Add configurable internal notification channels.
 - [ ] Add review queues and follow-up reminders.
 - [x] Add opportunity aging and stale-listing detection.
 - [ ] Add reporting for pipeline volume, quality, and estimated value.
 - [ ] Add explicit approval receipts for restricted actions.
 - [ ] Design—but do not silently enable—external integrations.
+
+Configurable notification channels is v0.3's second slice: a new,
+opt-in `ntfy` channel pushes a real-time notification to Scott's phone
+via ntfy.sh whenever a new opportunity needs review, alongside the
+existing `dashboard` channel. Off by default (`OPPORTUNITY_ENGINE_
+NTFY_TOPIC` unset); a delivery failure never blocks ingest. See
+`OE-ADR-029`.
 
 Opportunity aging and stale-listing detection is v0.3's first slice.
 Digging into the schema before building anything found `expires_at`,

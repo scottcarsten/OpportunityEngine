@@ -1329,3 +1329,81 @@ reading the code, not assumed:
 - Inferred staleness (from collection absence, not an explicit date) and
   the `'closed'` lifecycle state (likely tied to the "track what I've
   applied to" idea floated separately) remain open follow-on work.
+
+---
+
+## OE-ADR-029 — Configurable ntfy push channel for self-notifications
+
+**Status:** Accepted
+**Date:** 2026-08-06
+
+### Context
+
+v0.3's "Add configurable internal notification channels" item followed
+directly from `OE-ADR-028`. Today's only channel is `dashboard`
+(`OE-ADR-018`), created once per opportunity at ingest — but Scott isn't
+at the laptop every hour (day job, eating, sleeping), so a
+dashboard-only notification can sit unseen for a long time.
+
+A real question came up while scoping this: does pushing a notification
+to Scott's own phone count as an "external" action requiring approval
+under `config/constitution.json`'s `never_send_email` principle? Scott
+clarified directly: **that principle is about never auto-applying or
+reaching out to companies without his consent — not about notifying
+himself.** A push to his own phone is neither an external commitment nor
+unconsented contact. This resolves an ambiguity the constitution text
+didn't spell out, and settles how future notification-channel work
+should classify self-notifications: `is_external=0`, same as the
+existing dashboard channel.
+
+### Decision
+
+- Chose **ntfy.sh** as the new channel after discussing free options
+  (ntfy.sh, Pushover, Gotify, carrier email-to-SMS gateways). ntfy.sh
+  needs no account, delivers a real push notification via a single HTTP
+  POST, and needs no new dependency (`httpx` is already in
+  `requirements.txt`). Carrier email-to-SMS gateways were ruled out —
+  most carriers now throttle or block them as spam.
+- New `Settings.ntfy_topic` / `Settings.ntfy_server` (default
+  `https://ntfy.sh`) in `backend/config.py`. Unset topic = feature off,
+  the same "absence disables the feature" pattern `ANTHROPIC_API_KEY`
+  already establishes. No DB-backed per-notification-type preference
+  table — there's only one `notification_type`
+  (`opportunity_needs_review`) in the whole system today, so a toggle
+  table would be speculative ahead of a second type actually existing.
+- `backend/notifications.py`'s `send_ntfy()` sends `subject`/`body` as
+  the raw POST body rather than ntfy's `Title` header, since HTTP
+  headers must be ASCII-safe and job titles/company names aren't
+  guaranteed to be. It never raises — catches `httpx.HTTPError` (covers
+  both connection/timeout failures and non-2xx responses) and returns
+  `(False, str(exc))`, because a push-delivery failure must never roll
+  back an otherwise-successful opportunity ingest. The durable record is
+  still the `dashboard` notification row either way.
+- Fires from the same single call site in `OpportunityService._ingest`
+  that already creates the dashboard notification, writing a second
+  `Notification` row (`channel="ntfy"`, `status="sent"`/`"failed"`,
+  `error_summary` set on failure) so delivery outcome is auditable
+  without adding a new trigger point.
+- `notifications.channel`'s CHECK constraint (`0001_initial_schema.py`)
+  didn't include `'ntfy'`. SQLite can't alter a CHECK constraint in
+  place, and Alembic's SQLite batch-recreate doesn't preserve triggers,
+  so migration `0003` drops
+  `require_approval_for_external_notification_insert` before the batch
+  recreate and restores it verbatim afterward — that trigger still
+  gates any future `is_external=1` notification exactly as before.
+- `OpportunityService.__init__` gained an optional `settings: Settings |
+  None = None` (defaults to `get_settings()`), so the 7 existing call
+  sites didn't need edits — same precedent as `OpportunityInput
+  .expires_at`'s default in `OE-ADR-028`.
+
+### Consequences
+
+- Scott gets a real-time push when a new opportunity needs review,
+  without having to be at the laptop, while the dashboard stays the
+  authoritative, always-on record.
+- `.env.example` documents the setup, including a security note: the
+  public ntfy.sh server is unauthenticated by topic name, so the topic
+  must be a private, hard-to-guess string, not something guessable.
+- A per-notification-type channel preference (mute some, push others)
+  remains open follow-on work if a second `notification_type` is ever
+  added.

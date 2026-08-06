@@ -26,6 +26,8 @@ class Settings(BaseSettings):
     document_storage_path: Path = Path("data/documents")
     log_level: str = "INFO"
     enable_api_docs: bool = True
+    ntfy_topic: str | None = None
+    ntfy_server: str = "https://ntfy.sh"
 
     @field_validator("host")
     @classmethod

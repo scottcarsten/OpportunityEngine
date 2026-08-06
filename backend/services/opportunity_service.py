@@ -12,6 +12,7 @@ from sqlalchemy import func, select, update
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.orm import Session
 
+from backend.config import Settings, get_settings
 from backend.database import Database
 from backend.db.models import (
     AuditEventRecord,
@@ -28,6 +29,7 @@ from backend.db.models import (
     SourceRecord,
 )
 from backend.models import OpportunityInput
+from backend.notifications import send_ntfy
 from backend.services.audit_service import AuditEvent, AuditService
 from backend.services.constitution_service import Constitution
 from backend.timeutil import now_iso
@@ -63,9 +65,15 @@ _REVIEW_DECISION_STATUS = {
 class OpportunityService:
     """Provide the first complete manual opportunity workflow."""
 
-    def __init__(self, database: Database, constitution: Constitution) -> None:
+    def __init__(
+        self,
+        database: Database,
+        constitution: Constitution,
+        settings: Settings | None = None,
+    ) -> None:
         self.database = database
         self.constitution = constitution
+        self.settings = settings or get_settings()
 
     def create_manual(self, supplied: OpportunityInput) -> tuple[int, bool]:
         """Normalize, deduplicate, filter, and persist a manual opportunity."""
@@ -151,19 +159,40 @@ class OpportunityService:
                 # Created once, at ingest, not on every later status change -
                 # a re-decision is already visible in that opportunity's own
                 # review-decision history (OE-ADR-018).
+                subject = f"Review needed: {opportunity_row.title}"
+                body = (
+                    f"\"{opportunity_row.title}\" at "
+                    f"{opportunity_row.organization_name or 'an unspecified organization'} "
+                    f"is {lifecycle_status} and awaiting your review."
+                )
                 session.add(
                     Notification(
                         opportunity_id=opportunity_row.id,
                         notification_type="opportunity_needs_review",
                         channel="dashboard",
-                        subject=f"Review needed: {opportunity_row.title}",
-                        body=(
-                            f"\"{opportunity_row.title}\" at "
-                            f"{opportunity_row.organization_name or 'an unspecified organization'} "
-                            f"is {lifecycle_status} and awaiting your review."
-                        ),
+                        subject=subject,
+                        body=body,
                     )
                 )
+                if self.settings.ntfy_topic:
+                    # Self-notification, not an external contact (OE-ADR-029),
+                    # so is_external stays 0 - a delivery failure here must
+                    # never roll back an otherwise-successful ingest.
+                    sent, error = send_ntfy(
+                        self.settings.ntfy_server, self.settings.ntfy_topic, subject, body
+                    )
+                    session.add(
+                        Notification(
+                            opportunity_id=opportunity_row.id,
+                            notification_type="opportunity_needs_review",
+                            channel="ntfy",
+                            status="sent" if sent else "failed",
+                            subject=subject,
+                            body=body,
+                            sent_at=now_iso() if sent else None,
+                            error_summary=error,
+                        )
+                    )
             session.commit()
         except Exception:
             session.rollback()
