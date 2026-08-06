@@ -8,9 +8,9 @@ The roadmap is directional rather than a promise of autonomous execution. Any ex
 
 ## Current status
 
-**Project phase:** v0.2 complete  
-**Completed:** all of v0.1 (design baseline through the review inbox), and all of v0.2 (application preparation) — master résumé import/versioning, tailored-résumé/cover-letter/fit-report generation, document approval states, and DOCX/PDF export  
-**Next milestone:** v0.3 — controlled workflow and notifications (not yet sliced)
+**Project phase:** v0.3 complete  
+**Completed:** all of v0.1 (design baseline through the review inbox), all of v0.2 (application preparation) — master résumé import/versioning, tailored-résumé/cover-letter/fit-report generation, document approval states, and DOCX/PDF export — and all of v0.3 (controlled workflow and notifications) — opportunity aging/expiration, configurable `ntfy` push notifications, follow-up reminders, pipeline reporting, explicit approval receipts, and a design (not yet enabled) for future external integrations  
+**Next milestone:** v0.4 — quality, resilience, and deployment (not yet sliced)
 
 ## Definition of done
 
@@ -237,7 +237,7 @@ the system still never submitting anything itself.
 - [x] Add opportunity aging and stale-listing detection.
 - [x] Add reporting for pipeline volume, quality, and estimated value.
 - [x] Add explicit approval receipts for restricted actions.
-- [ ] Design—but do not silently enable—external integrations.
+- [x] Design—but do not silently enable—external integrations.
 
 Configurable notification channels is v0.3's second slice: a new,
 opt-in `ntfy` channel pushes a real-time notification to Scott's phone
@@ -270,6 +270,18 @@ explicit, audited sign-off before ever taking a restricted action
 verification, financial commitments). Deliberately built ahead of need
 at Scott's request — nothing in the app performs a restricted action
 yet, so the page shows its empty state until one does. See `OE-ADR-032`.
+
+Designing external integrations is v0.3's sixth and final slice —
+documentation only, nothing enabled. Scott named two integrations
+actually worth designing for: one-click email sending and direct
+job-board apply APIs (driven by his frustration with re-uploading a
+résumé the tool already generated). `OE-ADR-033` records the gating
+contract any future integration must follow (approval-gated via
+`OE-ADR-032`, separately audited, provider-swappable, `.env`-based
+credentials) and flags that job-board apply APIs are a real unknown —
+none of the four current sources are known to expose one, so that may
+end up as a smaller UX feature instead of a full API integration. v0.3
+is now complete.
 
 Opportunity aging and stale-listing detection is v0.3's first slice.
 Digging into the schema before building anything found `expires_at`,

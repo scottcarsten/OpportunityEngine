@@ -1603,3 +1603,102 @@ first.
   feature actually calls `request_approval()` — expected, not a bug.
 - A future feature that needs to take a restricted action has a ready,
   audited gate to call rather than needing to design one from scratch.
+
+---
+
+## OE-ADR-033 — Designing (not enabling) external integrations
+
+**Status:** Accepted — design only, nothing in this ADR is implemented
+**Date:** 2026-08-06
+
+### Context
+
+v0.3's last item is explicitly "Design—but do not silently enable—
+external integrations." Unlike every other slice this window, the
+deliverable here is documentation, not code: no provider is wired up,
+no credentials are requested, `.env.example` gains nothing. Asked which
+integrations were actually worth designing for (rather than speculating
+broadly), Scott named two, driven by a concrete, recurring frustration:
+**"I hate uploading the résumé for the system to have me just copy and
+paste it anyway."**
+
+1. **One-click email sending** — send a Scott-approved email (a
+   follow-up, a recruiter reply) directly, instead of him copy-pasting
+   AI-drafted text into his own email client.
+2. **Direct job-board apply APIs** — submit an application
+   programmatically instead of manually re-uploading/pasting the résumé
+   on a board's own site.
+
+Calendar/interview-scheduling integration was raised as an option but
+not chosen — out of scope, not even designed here.
+
+### The gating principle (applies to any future integration, not just these two)
+
+Every external integration, whenever one is actually built, must follow
+the same contract — this is the reusable part of this ADR, independent
+of which specific integration comes first:
+
+1. **No integration fires without a resolved, `approved`
+   `ApprovalRequest`** (`OE-ADR-032`). The action executed must match
+   that request's `action_type`/`target`/`scope` exactly — approval for
+   one action and target is never approval for a broader one
+   (`ARCHITECTURE.md` §5.6, already enforced by convention for document
+   generation vs. applying).
+2. **Executing the approved action moves the request to
+   `consumed`** — the schema's `ck_approval_requests_status` CHECK
+   already allows this value (Milestone 0), unused until now. This is
+   the one piece of actual scaffolding this ADR calls out as
+   already-ready: `approved` means "you may do this once";
+   `consumed` means "it's done." No code changes yet — `ApprovalService`
+   gains a `mark_consumed()` method only when a real executor exists to
+   call it.
+3. **The execution itself is separately audited** from the approval
+   decision — e.g. `event_type="email_sent"` or
+   `event_type="application_submitted"`, distinct from
+   `event_type="approval_decision"` — so the trail shows both "Scott
+   approved this" and "this actually happened, at this time, with this
+   outcome."
+4. **A provider-swappable interface, same shape as `ScoringProvider`
+   (`backend/scoring/base.py`) and `DocumentGenerationProvider`
+   (`backend/documents/base.py`)** — domain code depends on a Protocol,
+   never a specific vendor, so swapping providers later doesn't ripple
+   through the codebase.
+5. **Credentials follow the existing `.env`, gitignored-secret
+   pattern** (`ANTHROPIC_API_KEY`, `OPPORTUNITY_ENGINE_NTFY_TOPIC`) —
+   never committed, never logged.
+6. **A failed send/submission notifies Scott** (reusing the existing
+   dashboard/`ntfy` channels, `OE-ADR-029`) and leaves the
+   `ApprovalRequest` as-is for a manual retry decision — it never
+   silently retries or escalates scope on its own.
+
+### Integration-specific notes
+
+**Email sending**: needs a `send_email(...)` provider — SMTP via
+Scott's own account (an app password, same trust model as any personal
+email client) or a transactional API (SendGrid/Resend/Mailgun free
+tiers exist). Either is a thin adapter behind the Protocol in point 4
+above; the choice doesn't need to be made until this is actually built.
+
+**Job-board apply APIs**: genuinely uncertain, and worth saying so
+plainly rather than promising something that may not exist. All four
+current sources (`OE-ADR-022`: We Work Remotely, Himalayas, Remotive,
+Jobspresso) are *listing* feeds (RSS/JSON) — none are known to expose a
+programmatic *apply* endpoint; most small job boards route applications
+through their own web form or a `mailto:` link, not an API. This needs
+real per-source research at build time, not an assumption baked in now.
+If no API exists for a given board, the more realistic version of
+Scott's actual complaint — being forced to re-upload/re-paste a résumé
+he's already generated — might be better solved by a smaller UX
+feature (e.g., a one-click "copy tailored résumé text to clipboard"
+button on the opportunity detail page) than a full API integration.
+That's a real fork in approach worth revisiting with Scott once a
+specific board's actual capabilities are known, not decided here.
+
+### Consequences
+
+- Nothing behaves differently today — this is a reference for whenever
+  either integration is actually scoped as its own slice, so that work
+  starts from an agreed contract instead of inventing one under
+  pressure.
+- v0.3 is now complete: all six roadmap items are shipped or
+  (deliberately, for this one) designed without being enabled.
