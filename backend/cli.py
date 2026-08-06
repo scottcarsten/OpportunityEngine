@@ -13,6 +13,7 @@ from backend.adapters.remotive import RemotiveAdapter
 from backend.adapters.we_work_remotely import WeWorkRemotelyAdapter
 from backend.config import get_settings
 from backend.database import Database
+from backend.services.approval_service import ApprovalService
 from backend.services.collection_service import CollectionService
 from backend.services.constitution_service import load_constitution
 from backend.services.opportunity_service import OpportunityService
@@ -53,6 +54,11 @@ def main(argv: list[str] | None = None) -> int:
         # (OE-ADR-030).
         reminder_ids = opportunity_service.surface_due_reminders()
         result["reminders_sent"] = len(reminder_ids)
+        # Same table-wide, collection-triggered pattern as the two sweeps
+        # above - a stale pending approval doesn't depend on which source
+        # was just refreshed (OE-ADR-032).
+        expired_approval_ids = ApprovalService(database, constitution).expire_stale_requests()
+        result["expired_approvals_count"] = len(expired_approval_ids)
     finally:
         database.close()
 

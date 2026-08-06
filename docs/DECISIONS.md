@@ -1534,3 +1534,72 @@ what isn't known" precedent as `OE-ADR-021`.
 - If a genuine blended estimate is ever wanted, it needs an explicit,
   Scott-supplied assumption (e.g., hours/week) — deliberately not
   invented here.
+
+---
+
+## OE-ADR-032 — Explicit approval receipts for restricted actions
+
+**Status:** Accepted
+**Date:** 2026-08-06
+
+### Context
+
+v0.3's last review-workflow item was "Add explicit approval receipts for
+restricted actions." `approval_requests` is schema that's existed since
+Milestone 0 and, like every other v0.3 slice, was never wired up — but
+unlike the others, **nothing in the app performs a restricted action
+today.** There's no auto-apply, auto-email, contract-signing,
+identity-verification, or financial-commitment feature; `config
+/constitution.json`'s `human_approval_required` list
+(`applications`/`emails`/`external_messages`/`contracts`/
+`identity_verification`/`financial_commitments`) has no real caller.
+
+Asked directly whether this was actually needed, Scott was told exactly
+that — there's nothing to gate yet, so this would be infrastructure
+ahead of need. He chose to build it anyway, understanding the tradeoff:
+it's ready for whenever a future feature needs to take an external,
+restricted action and must get Scott's explicit, audited sign-off
+first.
+
+### Decision
+
+- New `ApprovalService` (`backend/services/approval_service.py`) mirrors
+  the shape of the two existing sweeps
+  (`OpportunityService.expire_stale_opportunities`/
+  `surface_due_reminders`): `request_approval()` creates a `pending` row
+  validated against the schema's own six `action_type` values (fails
+  fast with `ValueError`, mirroring `record_review_decision`);
+  `approve()`/`reject()` only ever act on a `pending` row; every
+  transition is audited (`approval_requested`, `approval_decision`,
+  `approval_expired`).
+- `expire_stale_requests()` moves `pending` requests whose `expires_at`
+  has passed to `expired` — structurally identical to the two prior
+  sweeps, wired into `python -m backend.cli collect <source>` alongside
+  them. Only ever touches `pending` rows: an already-`approved`/
+  `rejected` request is never overridden, the same boundary
+  `OE-ADR-024`/`028`/`030` already established.
+- **`approval_requests.approval_token_hash` stays unused.** It's clearly
+  meant for a future channel-initiated approval (e.g., tapping an
+  approval link from an `ntfy` push while away from the laptop,
+  `OE-ADR-029`), but building token generation *and* a
+  token-verification route with no real link-sending caller yet would
+  be a half-finished security mechanism — worse than not building it.
+  Direct dashboard approve/reject is sufficient today: the dashboard is
+  already an authenticated, loopback-only surface (v0.1's `host`
+  validator in `backend/config.py`). Deliberately deferred, not
+  silently dropped.
+- New `GET /approvals` page and `POST .../approve` `/.../reject` routes
+  (`backend/api/approvals.py`, mirrors `backend/api/reports.py`'s
+  shape), linked from the nav bar. No fake restricted action was built
+  to exercise this — it's verified by calling `request_approval()`
+  directly, the same honest approach used for
+  `expire_stale_opportunities()` before any adapter produced real
+  `expires_at` data.
+
+### Consequences
+
+- The engine, receipt trail, and audit log are complete and tested, but
+  the `/approvals` page will show its empty state until a future
+  feature actually calls `request_approval()` — expected, not a bug.
+- A future feature that needs to take a restricted action has a ready,
+  audited gate to call rather than needing to design one from scratch.

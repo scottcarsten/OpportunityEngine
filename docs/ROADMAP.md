@@ -236,7 +236,7 @@ the system still never submitting anything itself.
 - [x] Add review queues and follow-up reminders.
 - [x] Add opportunity aging and stale-listing detection.
 - [x] Add reporting for pipeline volume, quality, and estimated value.
-- [ ] Add explicit approval receipts for restricted actions.
+- [x] Add explicit approval receipts for restricted actions.
 - [ ] Design—but do not silently enable—external integrations.
 
 Configurable notification channels is v0.3's second slice: a new,
@@ -262,6 +262,14 @@ per opportunity, broken down by status), and estimated value grouped by
 pay type. No blended dollar total is ever computed, by Scott's own
 choice — hourly/fixed/salaried figures aren't comparable without
 guessing at hours worked. See `OE-ADR-031`.
+
+Explicit approval receipts is v0.3's fifth slice: a new `/approvals`
+page and `ApprovalService` let a future feature request Scott's
+explicit, audited sign-off before ever taking a restricted action
+(applying, emailing, external messages, contracts, identity
+verification, financial commitments). Deliberately built ahead of need
+at Scott's request — nothing in the app performs a restricted action
+yet, so the page shows its empty state until one does. See `OE-ADR-032`.
 
 Opportunity aging and stale-listing detection is v0.3's first slice.
 Digging into the schema before building anything found `expires_at`,

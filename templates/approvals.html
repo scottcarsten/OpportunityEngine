@@ -1,0 +1,78 @@
+{% extends "base.html" %}
+{% block title %}Approvals · OpportunityEngine{% endblock %}
+{% block content %}
+<div class="mb-4">
+  <h1 class="h2 mb-1">Approvals</h1>
+  <p class="text-secondary mb-0">
+    Explicit, audited receipts for restricted actions &mdash; applying,
+    emailing, external messages, contracts, identity verification, or
+    financial commitments. Approval for one action and target is never
+    approval for anything else.
+  </p>
+</div>
+
+{% if not requests %}
+<div class="bg-white border rounded p-4">
+  <p class="text-secondary mb-0">
+    No approval requests yet. Nothing in OpportunityEngine currently
+    takes a restricted action on its own &mdash; this page is ready for
+    when a future feature needs one approved.
+  </p>
+</div>
+{% else %}
+{% for item in requests %}
+<section class="bg-white border rounded p-4 mb-3">
+  <div class="d-flex justify-content-between align-items-start">
+    <div>
+      <h2 class="h5 mb-1">
+        {{ item.action_type|replace("_", " ")|title }} &mdash; {{ item.target }}
+      </h2>
+      <p class="small text-secondary mb-2">{{ item.scope }}</p>
+    </div>
+    {% if item.status == "pending" %}
+      <span class="badge text-bg-warning">Pending</span>
+    {% elif item.status == "approved" %}
+      <span class="badge text-bg-success">Approved</span>
+    {% elif item.status == "rejected" %}
+      <span class="badge text-bg-danger">Rejected</span>
+    {% elif item.status == "expired" %}
+      <span class="badge text-bg-dark">Expired</span>
+    {% elif item.status == "cancelled" %}
+      <span class="badge text-bg-secondary">Cancelled</span>
+    {% else %}
+      <span class="badge text-bg-info">{{ item.status|title }}</span>
+    {% endif %}
+  </div>
+  <dl class="row small mb-0">
+    <dt class="col-sm-3">Requested</dt>
+    <dd class="col-sm-9">{{ item.requested_at }} by {{ item.requested_by }}</dd>
+    {% if item.expires_at %}
+    <dt class="col-sm-3">Expires</dt>
+    <dd class="col-sm-9">{{ item.expires_at }}</dd>
+    {% endif %}
+    {% if item.resolved_at %}
+    <dt class="col-sm-3">Resolved</dt>
+    <dd class="col-sm-9">{{ item.resolved_at }} by {{ item.resolved_by }}</dd>
+    {% endif %}
+    {% if item.resolution_note %}
+    <dt class="col-sm-3">Note</dt>
+    <dd class="col-sm-9">{{ item.resolution_note }}</dd>
+    {% endif %}
+  </dl>
+  {% if item.status == "pending" %}
+  <form method="post" action="/approvals/{{ item.id }}/approve" class="mt-3">
+    <div class="mb-2">
+      <label class="form-label small" for="note-{{ item.id }}">
+        Resolution note (optional)
+      </label>
+      <textarea class="form-control" id="note-{{ item.id }}" name="resolution_note" rows="2"></textarea>
+    </div>
+    <button type="submit" class="btn btn-sm btn-outline-success">Approve</button>
+    <button type="submit" formaction="/approvals/{{ item.id }}/reject"
+            class="btn btn-sm btn-outline-danger">Reject</button>
+  </form>
+  {% endif %}
+</section>
+{% endfor %}
+{% endif %}
+{% endblock %}
