@@ -142,6 +142,7 @@ class Opportunity(Base):
     replaces_full_time_work: Mapped[int | None] = mapped_column(Integer)
     published_at: Mapped[str | None] = mapped_column(Text)
     expires_at: Mapped[str | None] = mapped_column(Text)
+    remind_at: Mapped[str | None] = mapped_column(Text)
     lifecycle_status: Mapped[str] = mapped_column(
         Text, nullable=False, server_default=text("'new'")
     )
@@ -203,6 +204,7 @@ class Opportunity(Base):
             "engagement_type",
         ),
         Index("idx_opportunities_last_seen", "last_seen_at"),
+        Index("idx_opportunities_status_remind", "lifecycle_status", "remind_at"),
     )
 
 

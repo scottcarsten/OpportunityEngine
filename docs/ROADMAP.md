@@ -233,7 +233,7 @@ the system still never submitting anything itself.
 **Goal:** Improve the review experience while keeping all external execution human-controlled.
 
 - [x] Add configurable internal notification channels.
-- [ ] Add review queues and follow-up reminders.
+- [x] Add review queues and follow-up reminders.
 - [x] Add opportunity aging and stale-listing detection.
 - [ ] Add reporting for pipeline volume, quality, and estimated value.
 - [ ] Add explicit approval receipts for restricted actions.
@@ -245,6 +245,15 @@ via ntfy.sh whenever a new opportunity needs review, alongside the
 existing `dashboard` channel. Off by default (`OPPORTUNITY_ENGINE_
 NTFY_TOPIC` unset); a delivery failure never blocks ingest. See
 `OE-ADR-029`.
+
+Review queues and follow-up reminders is v0.3's third slice: deferring
+an opportunity can now optionally set a reminder (3 days / 1 week / 2
+weeks, or none) via quick-pick buttons on the review form. A due
+reminder notifies Scott (dashboard, plus `ntfy` if configured) after
+each `collect` run without changing the opportunity's status — he still
+decides what happens next. The dashboard's existing status filters
+gained a "Follow-up due" chip rather than a separate queue page. See
+`OE-ADR-030`.
 
 Opportunity aging and stale-listing detection is v0.3's first slice.
 Digging into the schema before building anything found `expires_at`,

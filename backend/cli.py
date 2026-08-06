@@ -45,8 +45,14 @@ def main(argv: list[str] | None = None) -> int:
         # Runs after every collection, not just this source's — expiration
         # only depends on expires_at having passed, not on which source was
         # just refreshed, so it's always safe to sweep table-wide (OE-ADR-028).
-        expired_ids = OpportunityService(database, constitution).expire_stale_opportunities()
+        opportunity_service = OpportunityService(database, constitution)
+        expired_ids = opportunity_service.expire_stale_opportunities()
         result["expired_count"] = len(expired_ids)
+        # Same table-wide, collection-triggered pattern as expiration above -
+        # a due reminder doesn't depend on which source was just refreshed
+        # (OE-ADR-030).
+        reminder_ids = opportunity_service.surface_due_reminders()
+        result["reminders_sent"] = len(reminder_ids)
     finally:
         database.close()
 

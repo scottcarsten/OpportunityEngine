@@ -32,7 +32,7 @@ from backend.models import OpportunityInput
 from backend.notifications import send_ntfy
 from backend.services.audit_service import AuditEvent, AuditService
 from backend.services.constitution_service import Constitution
-from backend.timeutil import now_iso
+from backend.timeutil import add_days_iso, now_iso
 
 
 def _age_days(created_at: str) -> int:
@@ -254,12 +254,19 @@ class OpportunityService:
         decision: Literal["shortlist", "reject", "defer", "request_preparation", "reopen"],
         rationale: str | None = None,
         actor: str = "scott",
+        remind_days: int | None = None,
     ) -> None:
         """Record Scott's review decision and move lifecycle_status accordingly.
 
         Per ARCHITECTURE.md §5.6, the review queue presents evidence; Scott
         decides. No transition is blocked — he can re-shortlist something
         already rejected. See `OE-ADR-018`.
+
+        `remind_days` only applies to `decision="defer"` (OE-ADR-030): it
+        sets `remind_at` to that many days from now. Every other decision,
+        and a defer with no `remind_days`, clears any pending reminder —
+        a stale reminder shouldn't survive a status change away from
+        `deferred`.
         """
         new_status = _REVIEW_DECISION_STATUS.get(decision)
         if new_status is None:
@@ -276,6 +283,9 @@ class OpportunityService:
                 previous_status = opportunity.lifecycle_status
                 opportunity.lifecycle_status = new_status
                 opportunity.updated_at = now_iso()
+                opportunity.remind_at = (
+                    add_days_iso(remind_days) if decision == "defer" and remind_days else None
+                )
                 session.add(
                     ReviewDecision(
                         opportunity_id=opportunity_id,
@@ -358,6 +368,75 @@ class OpportunityService:
             session.commit()
             return list(candidate_ids)
 
+    def surface_due_reminders(self) -> list[int]:
+        """Re-notify Scott about `deferred` opportunities whose `remind_at` has passed.
+
+        Never changes `lifecycle_status` — a reminder just re-surfaces
+        something Scott already chose to defer; he still decides what
+        happens next (`OE-ADR-030`, same "don't override human judgment"
+        boundary as `expire_stale_opportunities`). One-shot: `remind_at`
+        is cleared after firing so it doesn't re-notify on every later
+        `collect` run.
+        """
+        now = now_iso()
+        with self.database.session() as session:
+            candidates = session.execute(
+                select(Opportunity).where(
+                    Opportunity.lifecycle_status == "deferred",
+                    Opportunity.remind_at.is_not(None),
+                    Opportunity.remind_at < now,
+                )
+            ).scalars().all()
+            for opportunity in candidates:
+                subject = f"Follow-up: {opportunity.title}"
+                body = (
+                    f"You deferred \"{opportunity.title}\" at "
+                    f"{opportunity.organization_name or 'an unspecified organization'} "
+                    "and asked to be reminded. Take another look?"
+                )
+                session.add(
+                    Notification(
+                        opportunity_id=opportunity.id,
+                        notification_type="follow_up_reminder",
+                        channel="dashboard",
+                        subject=subject,
+                        body=body,
+                    )
+                )
+                if self.settings.ntfy_topic:
+                    sent, error = send_ntfy(
+                        self.settings.ntfy_server, self.settings.ntfy_topic, subject, body
+                    )
+                    session.add(
+                        Notification(
+                            opportunity_id=opportunity.id,
+                            notification_type="follow_up_reminder",
+                            channel="ntfy",
+                            status="sent" if sent else "failed",
+                            subject=subject,
+                            body=body,
+                            sent_at=now_iso() if sent else None,
+                            error_summary=error,
+                        )
+                    )
+                session.execute(
+                    update(Opportunity)
+                    .where(Opportunity.id == opportunity.id)
+                    .values(remind_at=None)
+                )
+                AuditService(session).record(
+                    AuditEvent(
+                        event_type="follow_up_reminder_surfaced",
+                        actor_type="system",
+                        entity_type="opportunity",
+                        entity_id=opportunity.id,
+                        constitution_version=self.constitution.version,
+                        summary="Follow-up reminder date reached; notified Scott.",
+                    )
+                )
+            session.commit()
+            return [opportunity.id for opportunity in candidates]
+
     def count_pending_review(self) -> int:
         """Count opportunities with a queued internal notification."""
         with self.database.session() as session:
@@ -388,8 +467,17 @@ class OpportunityService:
             Opportunity.tax_type,
             Opportunity.lifecycle_status,
             Opportunity.created_at,
+            Opportunity.remind_at,
         ).order_by(Opportunity.created_at.desc(), Opportunity.id.desc())
-        if lifecycle_status is not None:
+        if lifecycle_status == "follow_up_due":
+            # Not a real lifecycle_status - a deferred opportunity whose
+            # reminder date has passed (OE-ADR-030).
+            query = query.where(
+                Opportunity.lifecycle_status == "deferred",
+                Opportunity.remind_at.is_not(None),
+                Opportunity.remind_at <= now_iso(),
+            )
+        elif lifecycle_status is not None:
             query = query.where(Opportunity.lifecycle_status == lifecycle_status)
         if engagement_type is not None:
             query = query.where(Opportunity.engagement_type == engagement_type)

@@ -213,15 +213,25 @@ async def review_opportunity(request: Request, opportunity_id: int) -> RedirectR
 
     form = await request.form()
     try:
-        decision = cast(
-            Literal["shortlist", "reject", "defer", "request_preparation", "reopen"],
-            _choice(
-                str(form.get("decision", "")),
-                {"shortlist", "reject", "defer", "request_preparation", "reopen"},
-            ),
-        )
+        defer_remind_days = form.get("defer_remind_days")
+        if defer_remind_days is not None:
+            decision: Literal[
+                "shortlist", "reject", "defer", "request_preparation", "reopen"
+            ] = "defer"
+            remind_days = int(str(defer_remind_days)) if str(defer_remind_days).strip() else None
+        else:
+            decision = cast(
+                Literal["shortlist", "reject", "defer", "request_preparation", "reopen"],
+                _choice(
+                    str(form.get("decision", "")),
+                    {"shortlist", "reject", "defer", "request_preparation", "reopen"},
+                ),
+            )
+            remind_days = None
         rationale = str(form.get("rationale", "")).strip() or None
-        service.record_review_decision(opportunity_id, decision, rationale)
+        service.record_review_decision(
+            opportunity_id, decision, rationale, remind_days=remind_days
+        )
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 

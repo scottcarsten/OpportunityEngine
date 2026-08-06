@@ -1407,3 +1407,69 @@ existing dashboard channel.
 - A per-notification-type channel preference (mute some, push others)
   remains open follow-on work if a second `notification_type` is ever
   added.
+
+---
+
+## OE-ADR-030 — Follow-up reminders on deferred opportunities
+
+**Status:** Accepted
+**Date:** 2026-08-06
+
+### Context
+
+v0.3's last open item was "review queues and follow-up reminders." Unlike
+`OE-ADR-028`/`029`, this one had nothing sitting unused in the schema to
+wire up — no `remind_at` column, no reminder concept anywhere — and
+`docs/ARCHITECTURE.md` §5.6 already treats the dashboard's status
+filters as "the review queue," so there was no separate queue concept
+to build either. The real, net-new gap: when Scott defers something, it
+just sits in `deferred` with no way to be reminded to look again.
+
+Scott chose two things directly: quick-pick reminder intervals on Defer
+(3 days / 1 week / 2 weeks / no reminder) over a date picker or one
+fixed interval, and extending the existing dashboard filters with a
+"Follow-up due" chip over a separate queue page.
+
+### Decision
+
+- New `opportunities.remind_at` (nullable `TEXT`, migration `0004`, plain
+  column add — no CHECK-constraint complication like `0003`), plus a
+  composite `(lifecycle_status, remind_at)` index for the sweep query.
+- `record_review_decision(..., remind_days=None)`: on `decision="defer"`,
+  `remind_at = add_days_iso(remind_days)` if `remind_days` was given,
+  else cleared. Every other decision also clears `remind_at` — a stale
+  reminder shouldn't survive a status change away from `deferred`, and
+  re-deferring without a reminder cancels a prior one.
+- The Defer button became four submit buttons in the existing review
+  form, all named `defer_remind_days` with different values (`3`, `7`,
+  `14`, empty). Only the clicked button's name/value pair is submitted
+  (standard HTML behavior), so no JavaScript or second form was needed —
+  `review_opportunity` checks for `defer_remind_days` in the posted form
+  before falling back to the existing `decision` field.
+- `OpportunityService.surface_due_reminders()` mirrors
+  `expire_stale_opportunities()`'s shape: selects `deferred`
+  opportunities whose `remind_at` has passed, notifies (`dashboard` +
+  `ntfy` if configured, reusing `OE-ADR-029`'s `send_ntfy`), records one
+  `AuditEvent` (`event_type="follow_up_reminder_surfaced"`,
+  `actor_type="system"`), and clears `remind_at` — one-shot, so it
+  doesn't re-notify on every later `collect` run. **It never changes
+  `lifecycle_status`** — the reminder just re-surfaces something Scott
+  already chose to defer; he still decides what happens next, the same
+  "never override a decision Scott already made" boundary
+  `OE-ADR-024`/`028` established. Wired into `python -m backend.cli
+  collect <source>` right after the expiration sweep, table-wide, for
+  the same reason expiration is (`OE-ADR-028`).
+- `list_opportunities`'s `lifecycle_status` parameter gained one special
+  value, `"follow_up_due"`, translated to `lifecycle_status = 'deferred'
+  AND remind_at IS NOT NULL AND remind_at <= now` instead of an
+  exact-match filter — it's not a real lifecycle state, just a dashboard
+  filter convenience. `get_opportunity()` needed no change; it already
+  selects `Opportunity.__table__` in full.
+
+### Consequences
+
+- Deferring something is no longer a dead end — Scott can ask to be
+  reminded, and get notified (dashboard, and his phone if `ntfy` is
+  configured) without having to remember to check back manually.
+- A per-notification-type preference and a genuinely separate queue view
+  remain deliberately out of scope, per Scott's own choice above.

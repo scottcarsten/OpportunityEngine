@@ -68,6 +68,10 @@
           {% endif %}
         </dd>
         {% endif %}
+        {% if opportunity.remind_at %}
+        <dt class="col-sm-4">Reminds you</dt>
+        <dd class="col-sm-8">{{ opportunity.remind_at }}</dd>
+        {% endif %}
         <dt class="col-sm-4">Source</dt>
         <dd class="col-sm-8">
           {% if opportunity.source %}
@@ -213,8 +217,14 @@
         </div>
         <button type="submit" name="decision" value="shortlist"
                 class="btn btn-sm btn-outline-primary">Shortlist</button>
-        <button type="submit" name="decision" value="defer"
-                class="btn btn-sm btn-outline-secondary">Defer</button>
+        <button type="submit" name="defer_remind_days" value="3"
+                class="btn btn-sm btn-outline-secondary">Defer, remind in 3 days</button>
+        <button type="submit" name="defer_remind_days" value="7"
+                class="btn btn-sm btn-outline-secondary">Defer, remind in 1 week</button>
+        <button type="submit" name="defer_remind_days" value="14"
+                class="btn btn-sm btn-outline-secondary">Defer, remind in 2 weeks</button>
+        <button type="submit" name="defer_remind_days" value=""
+                class="btn btn-sm btn-outline-secondary">Defer, no reminder</button>
         <button type="submit" name="decision" value="reject"
                 class="btn btn-sm btn-outline-dark">Reject</button>
         <button type="submit" name="decision" value="request_preparation"
