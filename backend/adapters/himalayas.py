@@ -36,7 +36,6 @@ _QUERY = (
     "cybersecurity OR it infrastructure OR network administrator OR "
     "office 365 OR azure"
 )
-_PAGE_LIMIT = 20
 _MAX_RECORDS = 200
 
 _EMPLOYMENT_TYPE_MAP: dict[str, EngagementType] = {
@@ -73,9 +72,14 @@ class HimalayasAdapter:
     def fetch(self) -> list[RawOpportunityRecord]:
         records: list[RawOpportunityRecord] = []
         retrieved_at = now_iso()
-        offset = 0
-        while offset < _MAX_RECORDS:
-            query = httpx.QueryParams({"q": _QUERY, "limit": _PAGE_LIMIT, "offset": offset})
+        page = 1
+        seen_count = 0
+        while seen_count < _MAX_RECORDS:
+            # /jobs/api/search paginates with a 1-based `page`, not
+            # `offset`+`limit` (that's the plain /jobs/api endpoint's
+            # scheme) — verified live: passing `offset` was silently
+            # ignored and returned page 1 every time.
+            query = httpx.QueryParams({"q": _QUERY, "page": page})
             url = f"{SEARCH_URL}?{query}"
             payload = json.loads(self._http_get(url))
             jobs = payload.get("jobs", [])
@@ -93,8 +97,9 @@ class HimalayasAdapter:
                         raw_payload=job,
                     )
                 )
-            offset += _PAGE_LIMIT
-            if offset >= payload.get("totalCount", 0):
+            seen_count += len(jobs)
+            page += 1
+            if seen_count >= payload.get("totalCount", 0):
                 break
         return records
 
