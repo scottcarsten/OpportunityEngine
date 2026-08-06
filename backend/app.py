@@ -12,6 +12,7 @@ from backend.api.opportunities import router as opportunities_router
 from backend.api.resumes import router as resumes_router
 from backend.config import Settings, get_settings
 from backend.database import Database
+from backend.documents.anthropic_provider import AnthropicDocumentProvider
 from backend.logging_config import configure_logging
 from backend.scoring.anthropic_provider import AnthropicScoringProvider
 from backend.services.constitution_service import Constitution, load_constitution
@@ -37,6 +38,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         app.state.constitution = constitution
         app.state.database = database
         app.state.scoring_provider = AnthropicScoringProvider()
+        app.state.document_provider = AnthropicDocumentProvider()
         yield
         database.close()
 

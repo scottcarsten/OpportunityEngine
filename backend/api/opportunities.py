@@ -8,7 +8,9 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
 from backend.models import EngagementType, OpportunityInput, RemoteStatus, TaxType
+from backend.services.document_service import DocumentService
 from backend.services.opportunity_service import OpportunityService
+from backend.services.resume_service import ResumeService
 from backend.services.scoring_service import ScoringService
 
 
@@ -28,6 +30,21 @@ def _scoring_service(request: Request) -> ScoringService:
         database=request.app.state.database,
         constitution=request.app.state.constitution,
         provider=request.app.state.scoring_provider,
+    )
+
+
+def _document_service(request: Request) -> DocumentService:
+    resume_service = ResumeService(
+        database=request.app.state.database,
+        constitution=request.app.state.constitution,
+        storage_path=request.app.state.settings.resume_storage_path,
+    )
+    return DocumentService(
+        database=request.app.state.database,
+        constitution=request.app.state.constitution,
+        provider=request.app.state.document_provider,
+        resume_service=resume_service,
+        storage_path=request.app.state.settings.document_storage_path,
     )
 
 
@@ -175,6 +192,20 @@ def score_opportunity(request: Request, opportunity_id: int) -> RedirectResponse
 
     try:
         _scoring_service(request).score_opportunity(opportunity_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    return RedirectResponse(url=f"/opportunities/{opportunity_id}", status_code=303)
+
+
+@router.post("/opportunities/{opportunity_id}/documents/tailored-resume")
+def generate_tailored_resume(request: Request, opportunity_id: int) -> RedirectResponse:
+    service = _service(request)
+    if service.get_opportunity(opportunity_id) is None:
+        raise HTTPException(status_code=404, detail="opportunity not found")
+
+    try:
+        _document_service(request).generate_tailored_resume(opportunity_id)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 

@@ -224,6 +224,67 @@
       {% endfor %}
       {% endif %}
     </section>
+    <section class="bg-white border rounded p-4 mt-4">
+      <h2 class="h4">Tailored r&eacute;sum&eacute;</h2>
+      <p class="small text-secondary">
+        Drafted from the master r&eacute;sum&eacute; only &mdash; never edits it.
+        Reviewing and approving a draft is not implemented yet; this is a
+        draft for you to read.
+      </p>
+      {% if opportunity.lifecycle_status == "preparing" %}
+      <form method="post" action="/opportunities/{{ opportunity.id }}/documents/tailored-resume" class="mb-3">
+        <button type="submit" class="btn btn-sm btn-primary">Generate tailored r&eacute;sum&eacute;</button>
+      </form>
+      {% else %}
+      <p class="small text-secondary">
+        Only opportunities with a "Request preparation" decision can have
+        documents generated.
+      </p>
+      {% endif %}
+
+      {% if opportunity.generated_documents %}
+      {% set latest_doc = opportunity.generated_documents[0] %}
+      <div class="border-top pt-3">
+        <div class="d-flex justify-content-between align-items-baseline">
+          <strong>Version {{ latest_doc.version }}</strong>
+          {% if latest_doc.status == "ready_for_review" %}
+            <span class="badge text-bg-success">Ready for review</span>
+          {% elif latest_doc.status == "validation_failed" %}
+            <span class="badge text-bg-danger">Validation failed</span>
+          {% else %}
+            <span class="badge text-bg-secondary">{{ latest_doc.status|replace("_", " ")|title }}</span>
+          {% endif %}
+        </div>
+        {% if latest_doc.unsupported_claims %}
+        <div class="alert alert-danger small mt-2 mb-2">
+          <strong>Unsupported claims &mdash; not in the master r&eacute;sum&eacute;:</strong>
+          <ul class="mb-0">
+            {% for claim in latest_doc.unsupported_claims %}
+            <li>{{ claim }}</li>
+            {% endfor %}
+          </ul>
+        </div>
+        {% endif %}
+        <pre class="small border rounded p-3 bg-light mt-2" style="white-space: pre-wrap">{{ latest_doc.content }}</pre>
+        <div class="small text-secondary">
+          {{ latest_doc.provider }} / {{ latest_doc.model }} &middot; {{ latest_doc.generated_at }}
+        </div>
+      </div>
+      {% endif %}
+
+      {% if opportunity.generated_documents|length > 1 %}
+      <h3 class="h6 mt-4">Generation history</h3>
+      {% for doc in opportunity.generated_documents[1:] %}
+      <div class="border-top py-2 small">
+        <div>
+          Version {{ doc.version }} &middot; {{ doc.status|replace("_", " ")|title }}
+          {% if doc.unsupported_claims %} &middot; {{ doc.unsupported_claims|length }} unsupported claim(s){% endif %}
+        </div>
+        <div class="text-secondary">{{ doc.generated_at }}</div>
+      </div>
+      {% endfor %}
+      {% endif %}
+    </section>
   </div>
 </div>
 {% endblock %}

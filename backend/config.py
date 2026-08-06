@@ -22,6 +22,7 @@ class Settings(BaseSettings):
     database_path: Path = Path("data/opportunity_engine.db")
     constitution_path: Path = Path("config/constitution.json")
     resume_storage_path: Path = Path("data/resumes")
+    document_storage_path: Path = Path("data/documents")
     log_level: str = "INFO"
     enable_api_docs: bool = True
 

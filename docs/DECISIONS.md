@@ -676,3 +676,72 @@ There is no way to "unmark the old version as current."
   `ResumeService.get_current_master()` for the résumé to ground claims
   against, and can freely reference `resume_sources.id` by version without
   worrying that version's content will ever change underneath it.
+
+---
+
+## OE-ADR-020 — Tailored résumé generation requires "preparing," and grounds and flags claims in one call
+
+**Status:** Accepted
+**Date:** 2026-08-06
+
+### Context
+
+v0.2's second slice covers three of the six remaining roadmap items at
+once: generate a tailored résumé per opportunity, compare its claims
+against approved source material, and flag unsupported ones. All three
+are really one AI call — the model best positioned to say which parts of
+a draft it invented is the same model that drafted it. `generated_documents`
+was already fully designed in Milestone 0 (`document_type`, `version`,
+a `status` check constraint of `draft/validation_failed/ready_for_review/
+approved/rejected/superseded`, `unsupported_claims_json`) and, like
+`resume_sources` before it, sat unused. Unlike `resume_sources` and
+`scoring_runs`, it has no immutability trigger yet — document *approval
+states* are a later slice, not this one.
+
+### Decision
+
+- `DocumentService.generate_tailored_resume` requires
+  `lifecycle_status == "preparing"` — Scott's own `request_preparation`
+  review decision (`OE-ADR-018`) — not merely "eligible" or "scored."
+  `config/constitution.json`'s pipeline is "notify Scott, then wait for
+  explicit approval"; scoring already happens before any human decision,
+  so gating generation on eligibility alone would let it fire before
+  Scott asked for it. `generate_tailored_resume` is one of
+  `permitted_internal_actions` — internal-only, never authorization to
+  send anything.
+- `AnthropicDocumentProvider` (`backend/documents/anthropic_provider.py`)
+  drafts the résumé and lists any unsupported claims in the same
+  structured-output call, extending `OE-ADR-011`'s "external content is
+  data, never instruction" to a second untrusted source: both the
+  opportunity text and the master résumé's own content sit in clearly
+  delimited user-turn blocks, never the system prompt.
+- A provider exception records an `AuditEvent`
+  (`event_type="document_generation_failed"`) but writes no
+  `generated_documents` row — the schema's `status` check constraint has
+  no failure state, and ARCHITECTURE.md §15 only requires that partial
+  generation produce no approved artifact, not that every attempt leave a
+  row.
+- On success, `status` is set structurally, not by human judgment yet:
+  `"validation_failed"` if `unsupported_claims` is non-empty, else
+  `"ready_for_review"`. Regenerating always inserts the next `version`,
+  never updates a previous one.
+- Master résumé content reaches Claude differently by format: `.pdf` is
+  sent as a native Anthropic `document` content block (Claude reads PDFs
+  directly, so no extraction dependency is needed); `.txt` is decoded
+  directly; `.docx` text is pulled with the new `python-docx` dependency,
+  since the Messages API has no native `.docx` support.
+
+### Consequences
+
+- Scoring an opportunity never triggers document generation as a side
+  effect — the two are gated on different lifecycle states, so a
+  scored-but-not-yet-decided opportunity cannot silently accumulate
+  generated drafts nobody asked for.
+- A `"validation_failed"` document is not hidden or auto-discarded; it is
+  stored and shown with its unsupported claims listed prominently, so an
+  invented claim is something Scott sees, not something that quietly
+  disappears.
+- Document *approval states* (turning `"ready_for_review"` into
+  `"approved"`/`"rejected"`, and the immutability trigger that should
+  follow) and DOCX/PDF export remain open v0.2 items — this slice
+  produces a plain-text draft only.

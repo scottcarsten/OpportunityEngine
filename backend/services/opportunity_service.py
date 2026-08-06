@@ -4,6 +4,7 @@ import hashlib
 import json
 from dataclasses import asdict
 from difflib import SequenceMatcher
+from pathlib import Path
 from typing import Any, Literal
 
 from sqlalchemy import func, select, update
@@ -15,6 +16,7 @@ from backend.db.models import (
     AuditEventRecord,
     DeduplicationDecision,
     FilterEvaluation,
+    GeneratedDocument,
     Notification,
     Opportunity,
     OpportunitySource,
@@ -398,6 +400,11 @@ class OpportunityService:
                 .where(ReviewDecision.opportunity_id == opportunity_id)
                 .order_by(ReviewDecision.id.desc())
             ).mappings().all()
+            generated_document_rows = session.execute(
+                select(GeneratedDocument.__table__)
+                .where(GeneratedDocument.opportunity_id == opportunity_id)
+                .order_by(GeneratedDocument.document_type, GeneratedDocument.version.desc())
+            ).mappings().all()
 
         result = dict(opportunity)
         result["source"] = dict(source_row) if source_row is not None else None
@@ -420,6 +427,16 @@ class OpportunityService:
         result["scoring_runs"] = [
             {**dict(run), "components": components_by_run.get(run["id"], [])}
             for run in scoring_run_rows
+        ]
+        result["generated_documents"] = [
+            {
+                **dict(row),
+                "unsupported_claims": json.loads(row["unsupported_claims_json"] or "[]"),
+                "content": Path(row["storage_path"]).read_text(encoding="utf-8")
+                if row["storage_path"]
+                else None,
+            }
+            for row in generated_document_rows
         ]
         return result
 
