@@ -72,11 +72,17 @@ class FakeDocumentProvider:
         self.calls += 1
         if self.error is not None:
             raise self.error
+        body_paragraphs = [
+            f"I am writing to express interest in the {opportunity['title']} role.",
+            f"My background, grounded in {resume_bytes.decode('utf-8')}, is a strong fit.",
+        ]
         return DocumentGenerationResult(
-            content=f"Cover letter for {opportunity['title']}, grounded in "
-            f"{resume_bytes.decode('utf-8')}.",
+            content=json.dumps({"body_paragraphs": body_paragraphs}),
             unsupported_claims=self.unsupported_claims,
-            structured_payload={"unsupported_claims": self.unsupported_claims},
+            structured_payload={
+                "body_paragraphs": body_paragraphs,
+                "unsupported_claims": self.unsupported_claims,
+            },
         )
 
     def generate_fit_report(self, opportunity, master_resume, resume_bytes, scoring, constitution):
@@ -739,6 +745,84 @@ def test_export_falls_back_for_legacy_plain_text_resume(client_and_app) -> None:
         (app.state.settings.document_storage_path).mkdir(parents=True, exist_ok=True)
         legacy_path = app.state.settings.document_storage_path / "legacy.txt"
         legacy_path.write_text("Just a plain prose résumé draft, pre-dating structured output.")
+        session.execute(
+            update(GeneratedDocument)
+            .where(GeneratedDocument.id == document_id)
+            .values(storage_path=str(legacy_path))
+        )
+        session.commit()
+
+    response = client.get(f"{detail_path}/documents/{document_id}/export.docx")
+
+    assert response.status_code == 200
+    assert response.content[:4] == b"PK\x03\x04"
+
+
+def test_export_docx_cover_letter_reflects_structured_content_and_static_data(
+    client_and_app,
+) -> None:
+    client, app = client_and_app
+    app.state.document_provider = FakeDocumentProvider()
+
+    client.post(
+        "/resume",
+        files={"file": ("resume.txt", b"Master resume content.", "text/plain")},
+        follow_redirects=False,
+    )
+    created = client.post("/opportunities", data=_form(), follow_redirects=False)
+    detail_path = urlparse(created.headers["location"]).path
+    client.post(f"{detail_path}/review", data={"decision": "request_preparation"})
+    client.post(f"{detail_path}/documents/cover-letter", follow_redirects=False)
+
+    with app.state.database.session() as session:
+        document_id = session.execute(
+            select(GeneratedDocument.id).where(
+                GeneratedDocument.document_type == "cover_letter"
+            )
+        ).scalars().one()
+
+    response = client.get(f"{detail_path}/documents/{document_id}/export.docx")
+    assert response.status_code == 200
+
+    import io
+
+    import docx
+
+    document = docx.Document(io.BytesIO(response.content))
+    assert len(document.tables) == 0
+    full_text = "\n".join(p.text for p in document.paragraphs)
+    assert "Test Candidate" in full_text  # static profile data, not AI-generated
+    assert "Acme Corp Hiring Team" in full_text  # from opportunity data
+    assert "I am writing to express interest" in full_text  # AI body content
+    assert "Sincerely," in full_text
+
+
+def test_export_falls_back_for_legacy_plain_text_cover_letter(client_and_app) -> None:
+    client, app = client_and_app
+
+    created = client.post("/opportunities", data=_form(), follow_redirects=False)
+    detail_path = urlparse(created.headers["location"]).path
+
+    with app.state.database.session() as session:
+        opportunity_id = int(detail_path.rsplit("/", 1)[-1])
+        row = GeneratedDocument(
+            opportunity_id=opportunity_id,
+            document_type="cover_letter",
+            version=1,
+            status="ready_for_review",
+            storage_path=None,
+            content_hash=None,
+            provider="fake",
+            model="fake-model",
+            prompt_version="legacy",
+            unsupported_claims_json="[]",
+        )
+        session.add(row)
+        session.flush()
+        document_id = row.id
+        (app.state.settings.document_storage_path).mkdir(parents=True, exist_ok=True)
+        legacy_path = app.state.settings.document_storage_path / "legacy_cover_letter.txt"
+        legacy_path.write_text("Just a plain prose cover letter, pre-dating structured output.")
         session.execute(
             update(GeneratedDocument)
             .where(GeneratedDocument.id == document_id)

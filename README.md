@@ -168,7 +168,10 @@ Working today:
   template (`/config/profile.json` holds your static identity/education/
   certifications — the AI never touches it) with the AI judging which
   roles from your full work history earn full detail versus a compressed
-  one-line entry, targeting a two-page result
+  one-line entry, targeting a two-page result. The cover letter renders
+  into a plain business-letter structure (sender block, date, recipient,
+  salutation, closing all templated — the AI only drafts the body
+  paragraphs), deliberately kept simple for ATS safety
 - Approving or rejecting a generated document — permanent once decided;
   a flagged document can still be approved, since flagging is meant to
   surface a judgment call for you, not block one

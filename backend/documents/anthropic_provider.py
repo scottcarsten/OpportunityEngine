@@ -21,6 +21,12 @@ that Claude never sees — only `professional_summary`, `core_competencies`,
 and `experience` (with per-role bullet selection) are AI-drafted, as
 structured output consumed by `backend/documents/resume_render.py`'s
 template renderer rather than free text (`OE-ADR-026`).
+
+The cover letter follows the same "static where it's factual, AI only
+where it needs judgment" split: sender block, date, recipient line, and
+closing are all templated by `backend/documents/cover_letter_render.py`
+from `config/profile.json` and the opportunity's own data — Claude drafts
+only `body_paragraphs` (`OE-ADR-027`).
 """
 
 import base64
@@ -51,7 +57,7 @@ class _ResumeResponseModel(BaseModel):
 
 
 class _CoverLetterResponseModel(BaseModel):
-    cover_letter_content: str
+    body_paragraphs: list[str]
     unsupported_claims: list[str]
 
 
@@ -114,18 +120,28 @@ ever reaches {owner} without being flagged first."""
 
 _COVER_LETTER_SYSTEM_PROMPT = _BASE_INSTRUCTIONS + """
 
-Draft a cover letter for the opportunity described in the <opportunity> \
-block, using only content grounded in the master résumé given in the \
-<master_resume> block (as text or as an attached document). Address why \
-{owner} is a strong fit for this specific opportunity, drawing only on \
-experience, skills, and outcomes actually present in the master résumé — \
-you must never invent employers, titles, dates, credentials, \
-certifications, or outcomes that are not present in it.
+Draft only the *body* of a cover letter for the opportunity described in \
+the <opportunity> block — the sender's contact block, date, recipient \
+line, salutation, and closing are handled separately and are not part of \
+your output. Write `body_paragraphs`: 3-4 plain-prose paragraphs (an \
+opening stating interest and the core reason {owner} is a fit, one or \
+two paragraphs connecting specific experience to this opportunity, and a \
+brief closing). Each paragraph is plain sentences — no Markdown, no \
+headers, no bullet points; this is a business letter, not a formatted \
+document. `body_paragraphs` must contain *only* complete, substantive \
+paragraphs of the letter's actual content — never a stray word, \
+placeholder, or sentence fragment as its own list item.
 
-After drafting, review your own draft and list every statement in it \
-that is not directly supported by the master résumé's actual content, \
-in `unsupported_claims`. This should usually be an empty list — it exists \
-so nothing invented ever reaches {owner} without being flagged first."""
+Ground every claim only in the master résumé given in the \
+<master_resume> block (as text or as an attached document) — you must \
+never invent employers, titles, dates, credentials, certifications, or \
+outcomes that are not present in it.
+
+After drafting, review your own paragraphs and list every statement in \
+them that is not directly supported by the master résumé's actual \
+content, in `unsupported_claims`. This should usually be an empty list \
+— it exists so nothing invented ever reaches {owner} without being \
+flagged first."""
 
 _FIT_REPORT_SYSTEM_PROMPT = _BASE_INSTRUCTIONS + """
 
@@ -317,10 +333,11 @@ class AnthropicDocumentProvider:
             output_format=_CoverLetterResponseModel,
             failure_noun="cover letter draft",
         )
+        payload = json.loads(parsed.model_dump_json())
         return DocumentGenerationResult(
-            content=parsed.cover_letter_content,
+            content=json.dumps({"body_paragraphs": payload["body_paragraphs"]}),
             unsupported_claims=parsed.unsupported_claims,
-            structured_payload=json.loads(parsed.model_dump_json()),
+            structured_payload=payload,
         )
 
     def generate_fit_report(

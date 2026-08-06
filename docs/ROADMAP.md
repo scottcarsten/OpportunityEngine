@@ -202,13 +202,25 @@ correction always meaning a new version, never an edit. A flagged
 (`validation_failed`) document stays approvable, since flagging is meant
 to surface a judgment call for Scott, not block one. See `OE-ADR-024`.
 
-DOCX/PDF export is the fifth and final slice, closing out v0.2.
+DOCX/PDF export is the fifth slice, closing out v0.2's checklist.
 `backend/documents/markdown_subset.py` parses the narrow subset of
 Markdown real generated content actually uses (headings, bold,
 paragraphs); `backend/documents/export.py` renders it on demand via
 `python-docx`/`reportlab` — no new AI call, nothing persisted beyond the
 existing `.txt`. Export works on any document regardless of approval
-status, by design. See `OE-ADR-025`. Tracked by Issue #7.
+status, by design. See `OE-ADR-025`.
+
+The tailored résumé and cover letter both later moved off that generic
+renderer onto purpose-built templates driven by structured (not
+free-text) AI output, following real dialogue with Scott about what
+"professional output" actually means for each: the résumé got a real
+branded layout matching Scott's own design (`OE-ADR-026`); the cover
+letter got the opposite treatment — deliberately plain, business-letter
+structure for ATS safety, with only its body paragraphs AI-drafted and
+everything factual (sender, date, recipient, closing) templated from
+`config/profile.json` and the opportunity's own data (`OE-ADR-027`). The
+fit report is the one type still on the generic renderer, since it's
+read by Scott, not submitted anywhere. Tracked by Issue #7.
 
 **v0.2 outcome reached:** Scott can import a master résumé, generate a
 tailored résumé/cover letter/fit report for any opportunity he's decided

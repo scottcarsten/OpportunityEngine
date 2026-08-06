@@ -8,6 +8,14 @@ from fastapi import APIRouter, HTTPException, Request, Response
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
+from backend.documents.cover_letter_render import (
+    parse_cover_letter_content,
+    render_cover_letter_docx,
+    render_cover_letter_pdf,
+)
+from backend.documents.cover_letter_render import (
+    render_plain_text_preview as render_cover_letter_preview,
+)
 from backend.documents.export import render_docx, render_pdf
 from backend.documents.markdown_subset import parse as parse_markdown_subset
 from backend.documents.resume_render import (
@@ -158,6 +166,14 @@ def opportunity_detail(
         structured = parse_resume_content(document["content"])
         if structured is not None:
             document["content"] = render_plain_text_preview(structured)
+
+    cover_letters = opportunity["generated_documents"]["cover_letter"]
+    if cover_letters:
+        profile = load_profile(request.app.state.settings.profile_path)
+        for document in cover_letters:
+            letter = parse_cover_letter_content(document["content"])
+            if letter is not None:
+                document["content"] = render_cover_letter_preview(letter, profile, opportunity)
 
     return templates.TemplateResponse(
         request=request,
@@ -310,16 +326,26 @@ def _export_filename(opportunity: dict, document: dict, extension: str) -> str:
 
 def _render_export(request: Request, opportunity: dict, document: dict, fmt: str) -> bytes:
     title = f"{document['document_type'].replace('_', ' ').title()} — {opportunity['title']}"
-    structured = (
-        parse_resume_content(document["content"])
-        if document["document_type"] == "tailored_resume"
-        else None
-    )
-    if structured is not None:
-        profile = load_profile(request.app.state.settings.profile_path)
-        return render_resume_docx(profile, structured) if fmt == "docx" else render_resume_pdf(
-            profile, structured
-        )
+
+    if document["document_type"] == "tailored_resume":
+        structured = parse_resume_content(document["content"])
+        if structured is not None:
+            profile = load_profile(request.app.state.settings.profile_path)
+            return (
+                render_resume_docx(profile, structured)
+                if fmt == "docx"
+                else render_resume_pdf(profile, structured)
+            )
+    elif document["document_type"] == "cover_letter":
+        letter = parse_cover_letter_content(document["content"])
+        if letter is not None:
+            profile = load_profile(request.app.state.settings.profile_path)
+            return (
+                render_cover_letter_docx(profile, opportunity, letter)
+                if fmt == "docx"
+                else render_cover_letter_pdf(profile, opportunity, letter)
+            )
+
     blocks = parse_markdown_subset(document["content"] or "")
     return render_docx(title, blocks) if fmt == "docx" else render_pdf(title, blocks)
 

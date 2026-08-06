@@ -1201,3 +1201,58 @@ both requested directly by Scott:
 Combined, a fresh live generation rendered to exactly 2 pages with all 9
 roles still present in the work history (compressed roles still appear
 as a single line — nothing dropped, per the original decision above).
+
+---
+
+## OE-ADR-027 — Cover letter: static business-letter structure, AI drafts only the body
+
+**Status:** Accepted
+**Date:** 2026-08-06
+
+### Context
+
+The cover letter still generated as one free-form string, rendered
+through the generic Markdown-subset path (`OE-ADR-025`) built for
+documents where format genuinely varies. A cover letter doesn't vary —
+it's a business letter: sender block, date, recipient, salutation, body,
+closing. Per Scott's earlier, explicit direction, this document should
+stay deliberately simple and linear for ATS safety rather than getting
+the résumé's navy/green branded treatment (`OE-ADR-026`) — the whole
+letter is prose anyway, so there's far less for a template to get wrong
+than the résumé's competencies/experience structure.
+
+### Decision
+
+- Same "static where it's factual, AI only where it needs judgment"
+  split as the résumé: sender block (name/location/phone/email) comes
+  from `config/profile.json`; the date is computed at render time, not
+  stored; the recipient line and salutation are derived from the
+  opportunity's own `organization_name` via a fixed template
+  (`"{organization} Hiring Team"`, falling back to `"Hiring Team"` if
+  blank); the closing (`"Sincerely," + full_name`) is fixed. None of
+  this is AI-generated — there's no real judgment call in any of it.
+- `generate_cover_letter` now returns only `body_paragraphs: list[str]`
+  (plus `unsupported_claims`) instead of one flat string — 3-4 plain-prose
+  paragraphs, explicitly instructed to contain no Markdown or formatting,
+  since a letter body is sentences, not a formatted document. Same
+  grounding discipline as every other document type.
+- `backend/documents/cover_letter_render.py` is deliberately **unstyled**
+  compared to `resume_render.py` — no color, no bold beyond the sender's
+  name line, same 0.25" margins Scott specified for the résumé. This
+  isn't an oversight; a plain cover letter has nothing exotic for an ATS
+  parser to trip on, so there's nothing to gain from adding visual design
+  and a real (if small) risk in doing so.
+- Same legacy-content fallback pattern as the résumé
+  (`parse_cover_letter_content` returns `None` for non-JSON content,
+  falling back to the pre-existing generic renderer) — the one
+  cover-letter version generated before this change is plain prose.
+
+### Consequences
+
+- Every generated document type now has the same structural discipline:
+  static facts are templated, never AI-generated; only genuinely
+  judgment-requiring content comes from the model.
+- The fit report remains the one document type still using the fully
+  generic Markdown-subset renderer — appropriate, since it's read
+  internally by Scott, not submitted anywhere, and its format doesn't
+  need to be constrained the way an externally-facing document's does.
