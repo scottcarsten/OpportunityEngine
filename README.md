@@ -50,7 +50,7 @@ Generate an additional **$3,000+/month** through:
 
 ---
 
-# Planned Repository Structure
+# Repository Structure
 
 ```
 OpportunityEngine/
@@ -59,74 +59,43 @@ README.md
 LICENSE
 .gitignore
 alembic.ini
-
-docs/
-architecture/
-backend/
-frontend/
-config/
-tests/
-docker/
-database/       # schema.sql (reference) + migrations/ (applied schema)
-templates/
-
-requirements.txt
-docker-compose.yml
 pyproject.toml
+requirements.txt
+
+backend/        # FastAPI app: routes, services, adapters, AI providers
+config/         # constitution.json (policy) + profile.json (your identity data, gitignored)
+database/       # schema.sql (reference) + migrations/ (applied Alembic schema)
+docs/           # VISION.md, ARCHITECTURE.md, DECISIONS.md (ADR log), ROADMAP.md
+templates/      # server-rendered Jinja2 + Bootstrap pages
+tests/
+.github/        # GitHub Actions CI (backend-ci.yml)
 ```
 
----
-
-# Planned Technology Stack
-
-- Linux Mint
-- Python
-- FastAPI
-- SQLite
-- Docker
-- SQLAlchemy
-- Bootstrap
-- Claude API (Anthropic)
-- python-docx
-- Jinja2
-- Nginx
+`docker/`, a separate `frontend/`, and multi-user support remain
+possible future directions (see `docs/ROADMAP.md`'s stretch goals) but
+don't exist yet — this app is a single-user, server-rendered monolith
+today.
 
 ---
 
-# Development Phases
+# Technology Stack
 
-## Phase 1
+- Linux Mint (development and target deployment platform)
+- Python, FastAPI, Uvicorn
+- SQLAlchemy + Alembic migrations, SQLite
+- Claude API (Anthropic), model `claude-opus-5` — scoring and document generation
+- `python-docx` + `reportlab` — DOCX/PDF export
+- Jinja2 + Bootstrap (server-rendered, no separate frontend)
+- Pytest + GitHub Actions CI
 
-- Project Skeleton
-- Documentation
-- Constitution
-- SQLite
-- Search Engine
+---
 
-## Phase 2
+# Roadmap and Decisions
 
-- Opportunity Collection
-- Deduplication
-- Filtering
-- AI Scoring
-
-## Phase 3
-
-- Résumé Generation
-- Cover Letter Generation
-- Proposal Generation
-
-## Phase 4
-
-- Dashboard
-- Notifications
-- Review Workflow
-
-## Phase 5
-
-- Portfolio-quality polishing
-- Plugin architecture
-- Multi-user support
+`docs/ROADMAP.md` is the authoritative, up-to-date milestone tracker —
+this README's Status section below is a summary of it, not a
+replacement. Every non-trivial design decision (and why it was made) is
+recorded in `docs/DECISIONS.md`'s ADR log.
 
 ---
 
