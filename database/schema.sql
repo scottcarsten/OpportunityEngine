@@ -394,6 +394,19 @@ BEGIN
     SELECT RAISE(ABORT, 'Audit events are append-only.');
 END;
 
+CREATE TRIGGER protect_generated_document_update
+BEFORE UPDATE ON generated_documents
+WHEN OLD.status IN ('approved', 'rejected')
+BEGIN
+    SELECT RAISE(ABORT, 'Decided documents are immutable.');
+END;
+
+CREATE TRIGGER protect_generated_document_delete
+BEFORE DELETE ON generated_documents
+BEGIN
+    SELECT RAISE(ABORT, 'Generated documents are append-only.');
+END;
+
 CREATE TRIGGER require_approval_for_external_notification_insert
 BEFORE INSERT ON notifications
 WHEN NEW.is_external = 1

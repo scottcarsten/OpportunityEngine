@@ -421,6 +421,13 @@ class OpportunityService:
                 .where(GeneratedDocument.opportunity_id == opportunity_id)
                 .order_by(GeneratedDocument.document_type, GeneratedDocument.version.desc())
             ).mappings().all()
+            decision_rows = session.execute(
+                select(AuditEventRecord.entity_id, AuditEventRecord.details_json)
+                .where(
+                    AuditEventRecord.entity_type == "generated_document",
+                    AuditEventRecord.event_type.in_(["document_approved", "document_rejected"]),
+                )
+            ).mappings().all()
 
         result = dict(opportunity)
         result["source"] = dict(source_row) if source_row is not None else None
@@ -444,6 +451,10 @@ class OpportunityService:
             {**dict(run), "components": components_by_run.get(run["id"], [])}
             for run in scoring_run_rows
         ]
+        rationale_by_document_id = {
+            row["entity_id"]: json.loads(row["details_json"] or "{}").get("rationale")
+            for row in decision_rows
+        }
         generated_documents_by_type: dict[str, list[dict[str, Any]]] = {
             "tailored_resume": [],
             "cover_letter": [],
@@ -457,6 +468,7 @@ class OpportunityService:
                     "content": Path(row["storage_path"]).read_text(encoding="utf-8")
                     if row["storage_path"]
                     else None,
+                    "decision_rationale": rationale_by_document_id.get(row["id"]),
                 }
             )
         result["generated_documents"] = generated_documents_by_type

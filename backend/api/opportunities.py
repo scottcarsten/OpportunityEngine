@@ -252,6 +252,36 @@ def generate_fit_report(request: Request, opportunity_id: int) -> RedirectRespon
     return RedirectResponse(url=f"/opportunities/{opportunity_id}", status_code=303)
 
 
+@router.post("/opportunities/{opportunity_id}/documents/{document_id}/decision")
+async def decide_generated_document(
+    request: Request, opportunity_id: int, document_id: int
+) -> RedirectResponse:
+    service = _service(request)
+    opportunity = service.get_opportunity(opportunity_id)
+    if opportunity is None:
+        raise HTTPException(status_code=404, detail="opportunity not found")
+    owns_document = any(
+        document["id"] == document_id
+        for documents in opportunity["generated_documents"].values()
+        for document in documents
+    )
+    if not owns_document:
+        raise HTTPException(status_code=404, detail="document not found")
+
+    form = await request.form()
+    try:
+        decision = cast(
+            Literal["approve", "reject"],
+            _choice(str(form.get("decision", "")), {"approve", "reject"}),
+        )
+        rationale = str(form.get("rationale", "")).strip() or None
+        _document_service(request).record_approval_decision(document_id, decision, rationale)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    return RedirectResponse(url=f"/opportunities/{opportunity_id}", status_code=303)
+
+
 def _choice(value: str, allowed: set[str]) -> str:
     if value not in allowed:
         raise ValueError(f"unsupported choice: {value}")

@@ -3,9 +3,9 @@
 import hashlib
 import json
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, Literal
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 
 from backend.database import Database
 from backend.db.models import GeneratedDocument, Opportunity, ScoreComponent, ScoringRun
@@ -14,6 +14,9 @@ from backend.services.audit_service import AuditEvent, AuditService
 from backend.services.constitution_service import Constitution
 from backend.services.resume_service import ResumeService
 from backend.timeutil import now_iso
+
+_DECIDABLE_STATUSES = ("ready_for_review", "validation_failed")
+_DECISION_STATUS: dict[str, str] = {"approve": "approved", "reject": "rejected"}
 
 
 class DocumentService:
@@ -80,6 +83,60 @@ class DocumentService:
             ),
         )
         return self._persist("fit_report", opportunity_id, master, result)
+
+    def record_approval_decision(
+        self,
+        document_id: int,
+        decision: Literal["approve", "reject"],
+        rationale: str | None = None,
+    ) -> None:
+        """Approve or reject a draft. Permanent — see `OE-ADR-024`.
+
+        `validation_failed` documents remain approvable: flagged claims
+        are Scott's judgment call, not an automatic block. Once decided,
+        the DB trigger (`protect_generated_document_update`) makes the
+        row immutable; this pre-check exists only for a friendlier error
+        than the raw `IntegrityError` that trigger would raise.
+        """
+        new_status = _DECISION_STATUS[decision]
+        with self.database.session() as session:
+            document = session.execute(
+                select(GeneratedDocument).where(GeneratedDocument.id == document_id)
+            ).scalar_one_or_none()
+            if document is None:
+                raise ValueError(f"document not found: {document_id}")
+            if document.status not in _DECIDABLE_STATUSES:
+                raise ValueError(
+                    f"document {document_id} has already been decided "
+                    f"(status={document.status})"
+                )
+
+            reviewed_at = now_iso()
+            session.execute(
+                update(GeneratedDocument)
+                .where(GeneratedDocument.id == document_id)
+                .values(status=new_status, reviewed_at=reviewed_at)
+            )
+            AuditService(session).record(
+                AuditEvent(
+                    event_type=f"document_{new_status}",
+                    actor_type="scott",
+                    entity_type="generated_document",
+                    entity_id=document_id,
+                    constitution_version=self.constitution.version,
+                    summary=(
+                        f"{decision.capitalize()}d {document.document_type} "
+                        f"v{document.version} for opportunity {document.opportunity_id}."
+                    ),
+                    details={
+                        "opportunity_id": document.opportunity_id,
+                        "document_type": document.document_type,
+                        "version": document.version,
+                        "rationale": rationale,
+                    },
+                )
+            )
+            session.commit()
 
     def _prepare(self, opportunity_id: int) -> tuple[dict, dict, bytes]:
         """Load and gate-check the opportunity, and load the master résumé bytes."""

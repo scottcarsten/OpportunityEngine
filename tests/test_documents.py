@@ -6,7 +6,8 @@ from urllib.parse import urlparse
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import select
+from sqlalchemy import delete, select, update
+from sqlalchemy.exc import IntegrityError
 
 from backend.app import create_app
 from backend.config import Settings
@@ -313,6 +314,96 @@ def test_provider_failure_records_audit_event_and_no_document(tmp_path: Path) ->
     assert "boom" in events[0].summary
 
 
+def test_approving_a_ready_for_review_document(tmp_path: Path) -> None:
+    opp_service, resume_service, database, constitution = _services(tmp_path)
+    opportunity_id = _preparing_opportunity(opp_service)
+    resume_service.import_master_resume("resume.txt", b"Master resume content.", "text/plain")
+    document_service = DocumentService(
+        database, constitution, FakeDocumentProvider(), resume_service, tmp_path / "documents"
+    )
+    result = document_service.generate_tailored_resume(opportunity_id)
+
+    document_service.record_approval_decision(
+        result["document_id"], "approve", rationale="Reads well."
+    )
+
+    with database.session() as session:
+        doc = session.execute(select(GeneratedDocument)).scalars().one()
+        events = session.execute(
+            select(AuditEventRecord).where(AuditEventRecord.event_type == "document_approved")
+        ).scalars().all()
+    assert doc.status == "approved"
+    assert doc.reviewed_at is not None
+    assert len(events) == 1
+    assert json.loads(events[0].details_json)["rationale"] == "Reads well."
+
+
+def test_rejecting_a_validation_failed_document(tmp_path: Path) -> None:
+    opp_service, resume_service, database, constitution = _services(tmp_path)
+    opportunity_id = _preparing_opportunity(opp_service)
+    resume_service.import_master_resume("resume.txt", b"Master resume content.", "text/plain")
+    provider = FakeDocumentProvider(unsupported_claims=["Invented a certification."])
+    document_service = DocumentService(
+        database, constitution, provider, resume_service, tmp_path / "documents"
+    )
+    result = document_service.generate_tailored_resume(opportunity_id)
+
+    document_service.record_approval_decision(result["document_id"], "reject")
+
+    with database.session() as session:
+        doc = session.execute(select(GeneratedDocument)).scalars().one()
+    assert doc.status == "rejected"
+
+
+def test_deciding_an_already_decided_document_raises(tmp_path: Path) -> None:
+    opp_service, resume_service, database, constitution = _services(tmp_path)
+    opportunity_id = _preparing_opportunity(opp_service)
+    resume_service.import_master_resume("resume.txt", b"Master resume content.", "text/plain")
+    document_service = DocumentService(
+        database, constitution, FakeDocumentProvider(), resume_service, tmp_path / "documents"
+    )
+    result = document_service.generate_tailored_resume(opportunity_id)
+    document_service.record_approval_decision(result["document_id"], "approve")
+
+    with pytest.raises(ValueError, match="already been decided"):
+        document_service.record_approval_decision(result["document_id"], "reject")
+
+
+def test_deciding_a_nonexistent_document_raises(tmp_path: Path) -> None:
+    _, resume_service, database, constitution = _services(tmp_path)
+    document_service = DocumentService(
+        database, constitution, FakeDocumentProvider(), resume_service, tmp_path / "documents"
+    )
+
+    with pytest.raises(ValueError, match="not found"):
+        document_service.record_approval_decision(999, "approve")
+
+
+def test_approved_document_is_immutable_at_the_db_level(tmp_path: Path) -> None:
+    opp_service, resume_service, database, constitution = _services(tmp_path)
+    opportunity_id = _preparing_opportunity(opp_service)
+    resume_service.import_master_resume("resume.txt", b"Master resume content.", "text/plain")
+    document_service = DocumentService(
+        database, constitution, FakeDocumentProvider(), resume_service, tmp_path / "documents"
+    )
+    result = document_service.generate_tailored_resume(opportunity_id)
+    document_service.record_approval_decision(result["document_id"], "approve")
+
+    with database.session() as session:
+        with pytest.raises(IntegrityError, match="immutable"):
+            session.execute(
+                update(GeneratedDocument)
+                .where(GeneratedDocument.id == result["document_id"])
+                .values(status="rejected")
+            )
+
+    with database.session() as session:
+        with pytest.raises(IntegrityError, match="append-only"):
+            session.execute(
+                delete(GeneratedDocument).where(GeneratedDocument.id == result["document_id"])
+            )
+
+
 @pytest.fixture
 def client_and_app(tmp_path: Path):
     settings = Settings(
@@ -425,3 +516,64 @@ def test_fit_report_route_requires_scoring_first(client_and_app) -> None:
 
     response = client.post(f"{detail_path}/documents/fit-report", follow_redirects=False)
     assert response.status_code == 422
+
+
+def test_decision_route_approves_and_shows_permanently(client_and_app) -> None:
+    client, app = client_and_app
+    app.state.document_provider = FakeDocumentProvider()
+
+    client.post(
+        "/resume",
+        files={"file": ("resume.txt", b"Master resume content.", "text/plain")},
+        follow_redirects=False,
+    )
+    created = client.post("/opportunities", data=_form(), follow_redirects=False)
+    detail_path = urlparse(created.headers["location"]).path
+    client.post(f"{detail_path}/review", data={"decision": "request_preparation"})
+    client.post(f"{detail_path}/documents/tailored-resume", follow_redirects=False)
+
+    with app.state.database.session() as session:
+        document_id = session.execute(select(GeneratedDocument.id)).scalars().one()
+
+    response = client.post(
+        f"{detail_path}/documents/{document_id}/decision",
+        data={"decision": "approve", "rationale": "Looks accurate."},
+        follow_redirects=False,
+    )
+    assert response.status_code == 303
+
+    detail = client.get(detail_path)
+    assert "Approved" in detail.text
+    assert "Looks accurate." in detail.text
+    assert f"/documents/{document_id}/decision" not in detail.text
+
+
+def test_decision_route_404s_on_mismatched_opportunity(client_and_app) -> None:
+    client, app = client_and_app
+    app.state.document_provider = FakeDocumentProvider()
+
+    client.post(
+        "/resume",
+        files={"file": ("resume.txt", b"Master resume content.", "text/plain")},
+        follow_redirects=False,
+    )
+    first = client.post("/opportunities", data=_form(), follow_redirects=False)
+    first_path = urlparse(first.headers["location"]).path
+    client.post(f"{first_path}/review", data={"decision": "request_preparation"})
+    client.post(f"{first_path}/documents/tailored-resume", follow_redirects=False)
+
+    second = client.post(
+        "/opportunities", data=_form(title="Second Role", source_url="https://example.com/jobs/2"),
+        follow_redirects=False,
+    )
+    second_path = urlparse(second.headers["location"]).path
+
+    with app.state.database.session() as session:
+        document_id = session.execute(select(GeneratedDocument.id)).scalars().one()
+
+    response = client.post(
+        f"{second_path}/documents/{document_id}/decision",
+        data={"decision": "approve"},
+        follow_redirects=False,
+    )
+    assert response.status_code == 404

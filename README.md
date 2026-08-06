@@ -166,11 +166,14 @@ Working today:
   claim is flagged for review, and all three are only available once
   you've made a "Request preparation" review decision on that opportunity
   (the fit report also needs a completed score first)
+- Approving or rejecting a generated document — permanent once decided;
+  a flagged document can still be approved, since flagging is meant to
+  surface a judgment call for you, not block one
 - Automated test suite and GitHub Actions CI
 
 Not implemented yet:
 
-- Document approval states and DOCX/PDF export
+- DOCX/PDF export
 - Applications, email, or any external action
 
 ---

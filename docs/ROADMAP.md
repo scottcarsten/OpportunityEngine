@@ -159,7 +159,7 @@ page now also shows its source (`sources`/`source_records`). See
 - [x] Generate cover-letter and fit-report drafts.
 - [x] Compare generated claims against approved source material.
 - [x] Flag unsupported or uncertain claims.
-- [ ] Add document versioning and approval states.
+- [x] Add document versioning and approval states.
 - [ ] Export DOCX and PDF artifacts.
 
 Master résumé import/versioning (`backend/services/resume_service.py`,
@@ -183,8 +183,16 @@ draft-and-flag-unsupported-claims pattern as the résumé; a fit report is
 different in kind — it synthesizes an opportunity's existing scoring run
 (`OE-ADR-017`) into readable prose rather than producing a new judgment,
 and requires a successful score to exist first. See `OE-ADR-023`.
-Document versioning and approval states, and DOCX/PDF export, are the
-remaining follow-on milestones. Tracked by Issue #7.
+
+Document approval states are the fourth slice: `generated_documents`
+gained the immutability trigger every other significant-decision table
+in this schema already had, and `DocumentService.record_approval_decision`
+is the only writer of `approved`/`rejected` — permanent once set, with a
+correction always meaning a new version, never an edit. A flagged
+(`validation_failed`) document stays approvable, since flagging is meant
+to surface a judgment call for Scott, not block one. See `OE-ADR-024`.
+DOCX/PDF export is the one remaining follow-on milestone — exporting an
+*approved* document is its natural trigger point. Tracked by Issue #7.
 
 **v0.2 outcome:** Scott can approve or reject complete application packages, but the system still cannot submit them.
 

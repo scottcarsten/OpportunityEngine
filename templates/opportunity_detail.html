@@ -229,8 +229,8 @@
       <h2 class="h4">{{ label }}</h2>
       <p class="small text-secondary">
         Drafted from the master r&eacute;sum&eacute; only &mdash; never edits it.
-        Reviewing and approving a draft is not implemented yet; this is a
-        draft for you to read.
+        Approving or rejecting a draft is permanent; a correction is
+        always a new version.
       </p>
       {% if can_generate %}
       <form method="post" action="/opportunities/{{ opportunity_id }}/documents/{{ route_suffix }}" class="mb-3">
@@ -249,6 +249,10 @@
             <span class="badge text-bg-success">Ready for review</span>
           {% elif latest_doc.status == "validation_failed" %}
             <span class="badge text-bg-danger">Validation failed</span>
+          {% elif latest_doc.status == "approved" %}
+            <span class="badge text-bg-success">Approved</span>
+          {% elif latest_doc.status == "rejected" %}
+            <span class="badge text-bg-secondary">Rejected</span>
           {% else %}
             <span class="badge text-bg-secondary">{{ latest_doc.status|replace("_", " ")|title }}</span>
           {% endif %}
@@ -267,6 +271,25 @@
         <div class="small text-secondary">
           {{ latest_doc.provider }} / {{ latest_doc.model }} &middot; {{ latest_doc.generated_at }}
         </div>
+        {% if latest_doc.status in ("ready_for_review", "validation_failed") %}
+        <form method="post"
+              action="/opportunities/{{ opportunity_id }}/documents/{{ latest_doc.id }}/decision"
+              class="mt-2">
+          <div class="mb-2">
+            <input type="text" class="form-control form-control-sm" name="rationale"
+                   placeholder="Rationale (optional)">
+          </div>
+          <button type="submit" name="decision" value="approve"
+                  class="btn btn-sm btn-outline-success">Approve</button>
+          <button type="submit" name="decision" value="reject"
+                  class="btn btn-sm btn-outline-secondary">Reject</button>
+        </form>
+        {% elif latest_doc.status in ("approved", "rejected") %}
+        <div class="small text-secondary mt-2">
+          {{ latest_doc.status|title }}{% if latest_doc.reviewed_at %} {{ latest_doc.reviewed_at }}{% endif %}
+          {% if latest_doc.decision_rationale %}&mdash; {{ latest_doc.decision_rationale }}{% endif %}
+        </div>
+        {% endif %}
       </div>
       {% endif %}
 

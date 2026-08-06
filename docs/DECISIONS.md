@@ -956,3 +956,66 @@ judgment path at worst.
   section alone.
 - Document *approval states* and DOCX/PDF export remain the only open
   v0.2 items.
+
+---
+
+## OE-ADR-024 — Document approval is permanent; `generated_documents` is now append-only
+
+**Status:** Accepted
+**Date:** 2026-08-06
+
+### Context
+
+`generated_documents.status` has allowed `approved`/`rejected` since
+Milestone 0, but nothing ever wrote them and no trigger protected them —
+`OE-ADR-020`/`OE-ADR-023` both flagged this as the follow-on. It was the
+one append-only-relevant table in the schema still missing its
+protective trigger; every other one (`resume_sources`, `filter_evaluations`,
+`scoring_runs`, `audit_events`) already has one.
+
+### Decision
+
+- `database/migrations/versions/0002_protect_generated_documents.py`
+  (mirrored in `database/schema.sql`) adds
+  `protect_generated_document_update`/`_delete`, copying
+  `scoring_runs`' exact shape: `WHEN OLD.status IN ('approved',
+  'rejected')` blocks further updates, delete is blocked unconditionally.
+  `draft`/`validation_failed`/`ready_for_review` rows stay mutable until
+  decided.
+- `DocumentService.record_approval_decision` (`backend/services/
+  document_service.py`) is the only writer of `approved`/`rejected`. It
+  pre-checks the row is still in a decidable status before writing —
+  the same "friendly service-level check backstopped by a DB trigger"
+  pattern `ResumeService` and `OpportunityService` already use — and
+  records an `AuditEvent` (`document_approved`/`document_rejected`) with
+  the rationale in `details_json` rather than a new column, mirroring how
+  hard-filter override rationale is stored (`OE-ADR-016`).
+- **`validation_failed` documents remain approvable.** The constitution's
+  own stance is "flag uncertain claims," not "block them" — a flagged
+  claim might be a defensible paraphrase (confirmed directly: the first
+  real cover letter generated under `OE-ADR-023` flagged mostly
+  reasonable interpretive framing, not fabrication). Routing it to Scott
+  for a judgment call, rather than making `validation_failed` a dead end,
+  is the point.
+- **No unapprove/unreject, ever.** Consistent with every other
+  append-only table here: a correction is always a new version — already
+  true today, since regenerating already creates the next version
+  regardless of the previous one's status.
+- **Distinct from `approval_requests`.** That table (`action_type IN
+  ('application', 'email', 'external_message', 'contract',
+  'identity_verification', 'financial_commitment')`) is reserved for
+  actual restricted external actions and remains completely unbuilt.
+  Approving a résumé draft here only ever writes
+  `generated_documents.status` — it is not, and must never become,
+  authorization to send anything anywhere.
+
+### Consequences
+
+- `generated_documents` now has the same immutability guarantee every
+  other significant-decision table in this schema has.
+- The opportunity detail page's document sections show a permanent
+  decision (badge + rationale + timestamp) once approved/rejected instead
+  of leaving drafts in an ambiguous, endlessly-re-editable state.
+- DOCX/PDF export — the one remaining v0.2 item — now has a natural
+  trigger point: exporting an *approved* document, not an undecided
+  draft.
