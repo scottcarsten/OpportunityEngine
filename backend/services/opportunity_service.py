@@ -444,16 +444,22 @@ class OpportunityService:
             {**dict(run), "components": components_by_run.get(run["id"], [])}
             for run in scoring_run_rows
         ]
-        result["generated_documents"] = [
-            {
-                **dict(row),
-                "unsupported_claims": json.loads(row["unsupported_claims_json"] or "[]"),
-                "content": Path(row["storage_path"]).read_text(encoding="utf-8")
-                if row["storage_path"]
-                else None,
-            }
-            for row in generated_document_rows
-        ]
+        generated_documents_by_type: dict[str, list[dict[str, Any]]] = {
+            "tailored_resume": [],
+            "cover_letter": [],
+            "fit_report": [],
+        }
+        for row in generated_document_rows:
+            generated_documents_by_type.setdefault(row["document_type"], []).append(
+                {
+                    **dict(row),
+                    "unsupported_claims": json.loads(row["unsupported_claims_json"] or "[]"),
+                    "content": Path(row["storage_path"]).read_text(encoding="utf-8")
+                    if row["storage_path"]
+                    else None,
+                }
+            )
+        result["generated_documents"] = generated_documents_by_type
         return result
 
     @staticmethod

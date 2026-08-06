@@ -9,9 +9,9 @@ The roadmap is directional rather than a promise of autonomous execution. Any ex
 ## Current status
 
 **Project phase:** v0.2 in progress  
-**Completed:** all of v0.1 (design baseline through the review inbox), plus v0.2's master résumé import/versioning and tailored-résumé-generation slices  
-**In progress:** v0.2 (application preparation) — cover-letter/fit-report generation, document versioning and approval states, and DOCX/PDF export remain  
-**Next milestone:** generate cover-letter and fit-report drafts alongside the tailored résumé (Issue #7)
+**Completed:** all of v0.1 (design baseline through the review inbox), plus v0.2's master résumé import/versioning, tailored-résumé-generation, and cover-letter/fit-report-generation slices  
+**In progress:** v0.2 (application preparation) — document versioning and approval states, and DOCX/PDF export remain  
+**Next milestone:** add document versioning and approval states, or export DOCX/PDF artifacts (Issue #7)
 
 ## Definition of done
 
@@ -156,7 +156,7 @@ page now also shows its source (`sources`/`source_records`). See
 
 - [x] Import and version a master résumé as read-only.
 - [x] Generate a new tailored résumé per selected opportunity.
-- [ ] Generate cover-letter and fit-report drafts.
+- [x] Generate cover-letter and fit-report drafts.
 - [x] Compare generated claims against approved source material.
 - [x] Flag unsupported or uncertain claims.
 - [ ] Add document versioning and approval states.
@@ -175,9 +175,16 @@ Opus 5 drafts a résumé grounded only in the current master résumé and, in
 the same call, flags any statement in its own draft that isn't directly
 supported by it. Generation requires Scott's `request_preparation`
 review decision first (`lifecycle_status == "preparing"`), not just an
-eligible or scored opportunity. See `OE-ADR-020`. Document versioning and
-approval states, cover-letter/fit-report generation, and DOCX/PDF export
-are follow-on milestones. Tracked by Issue #7.
+eligible or scored opportunity. See `OE-ADR-020`.
+
+Cover-letter and fit-report generation is the third slice, reusing that
+same service and provider. A cover letter follows the same
+draft-and-flag-unsupported-claims pattern as the résumé; a fit report is
+different in kind — it synthesizes an opportunity's existing scoring run
+(`OE-ADR-017`) into readable prose rather than producing a new judgment,
+and requires a successful score to exist first. See `OE-ADR-023`.
+Document versioning and approval states, and DOCX/PDF export, are the
+remaining follow-on milestones. Tracked by Issue #7.
 
 **v0.2 outcome:** Scott can approve or reject complete application packages, but the system still cannot submit them.
 

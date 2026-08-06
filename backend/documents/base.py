@@ -19,7 +19,7 @@ class DocumentGenerationResult:
 
 
 class DocumentGenerationProvider(Protocol):
-    """One AI (or other) provider capable of drafting a tailored résumé."""
+    """One AI (or other) provider capable of drafting application documents."""
 
     provider_name: str
     model_name: str
@@ -38,5 +38,33 @@ class DocumentGenerationProvider(Protocol):
         (has `mime_type`, `file_name`, `version`); `resume_bytes` is the
         raw file content read from its `storage_path`. The provider — not
         the caller — decides how to encode it for the model.
+        """
+        ...
+
+    def generate_cover_letter(
+        self,
+        opportunity: dict,
+        master_resume: dict,
+        resume_bytes: bytes,
+        constitution: Constitution,
+    ) -> DocumentGenerationResult:
+        """Draft a cover letter for one opportunity, grounded in the master résumé."""
+        ...
+
+    def generate_fit_report(
+        self,
+        opportunity: dict,
+        master_resume: dict,
+        resume_bytes: bytes,
+        scoring: dict,
+        constitution: Constitution,
+    ) -> DocumentGenerationResult:
+        """Synthesize a fit report from an already-completed scoring run.
+
+        `scoring` is `{overall_score, confidence, fit_summary, concerns,
+        components: [{code, score, weight, explanation}, ...]}` — the same
+        shape `OpportunityService.get_opportunity` assembles for
+        `scoring_runs`. The provider explains and contextualizes these
+        already-computed judgments; it does not re-score the opportunity.
         """
         ...

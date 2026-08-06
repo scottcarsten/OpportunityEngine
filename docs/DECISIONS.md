@@ -890,3 +890,69 @@ per-item field, then keyword scan as the fallback):
   nonexistent) rather than left unresolved — see the research this ADR is
   based on for the full per-site breakdown if a dropped source is ever
   revisited.
+
+---
+
+## OE-ADR-023 — Cover letters and fit reports; a fit report synthesizes, it doesn't re-score
+
+**Status:** Accepted
+**Date:** 2026-08-06
+
+### Context
+
+v0.2's third slice covers the roadmap's "Generate cover-letter and
+fit-report drafts" bullet. `generated_documents.document_type` already
+allowed `cover_letter` and `fit_report` (Milestone 0); both reuse the
+`DocumentService`/`DocumentGenerationProvider` machinery the tailored
+résumé slice built (`OE-ADR-020`). A cover letter is the same shape of
+task as the résumé — draft new content grounded in the master résumé,
+flag anything unsupported. A fit report is not: it's meant to explain a
+scoring run (`OE-ADR-017`) that already happened, not produce a fresh
+judgment. Treating it like the other two — "draft something new about
+how well this fits" — would let the model re-score the opportunity in
+prose, potentially disagreeing with the actual `ScoringRun` sitting in
+the database, which would be confusing at best and a second, uncontrolled
+judgment path at worst.
+
+### Decision
+
+- `DocumentGenerationProvider` (`backend/documents/base.py`) gained
+  `generate_cover_letter` (same signature as `generate_tailored_resume`)
+  and `generate_fit_report`, which additionally takes a `scoring` dict —
+  `overall_score`, `confidence`, `fit_summary`, `concerns`, and
+  `components` — the same shape `OpportunityService.get_opportunity`
+  already assembles for `scoring_runs`.
+- `DocumentService.generate_fit_report` requires the opportunity's latest
+  `ScoringRun` to have `status == "succeeded"`; otherwise it raises
+  `ValueError` ("score this opportunity before generating a fit report")
+  before ever calling the provider. Same `lifecycle_status == "preparing"`
+  gate as the other two document types on top of that.
+- `AnthropicDocumentProvider`'s fit-report system prompt explicitly frames
+  the scores as *given facts, not to be re-judged* — the model's job is
+  explaining and contextualizing them in prose, grounded in the résumé
+  for any claim about Scott's own background. It still reports
+  `unsupported_claims` for anything not grounded in either the résumé or
+  the given scoring data.
+- Two refactors, both justified by now having three call sites instead of
+  one: `_master_resume_blocks` (PDF/docx/txt encoding) is shared across
+  all three provider methods instead of being tailored-résumé-only, and
+  `DocumentService._persist` (content-hash, file write, versioning,
+  `GeneratedDocument` insert, audit event) is shared across all three
+  service methods instead of being duplicated.
+- `OpportunityService.get_opportunity`'s `generated_documents` changed
+  from a flat list to a dict keyed by `document_type`, each newest-first
+  — the template needs to address three independent histories, not
+  filter one flat list three times.
+
+### Consequences
+
+- There is exactly one place an opportunity's fit gets judged
+  (`ScoringService`) — the fit report can only elaborate on that
+  judgment, never produce a second, contradictory one.
+- `templates/opportunity_detail.html` gained a Jinja macro
+  (`document_section`), following the same "reused several times with
+  real per-call differences" bar `templates/dashboard.html`'s
+  `filter_link` macro was held to — not introduced for the résumé
+  section alone.
+- Document *approval states* and DOCX/PDF export remain the only open
+  v0.2 items.

@@ -224,6 +224,34 @@ def generate_tailored_resume(request: Request, opportunity_id: int) -> RedirectR
     return RedirectResponse(url=f"/opportunities/{opportunity_id}", status_code=303)
 
 
+@router.post("/opportunities/{opportunity_id}/documents/cover-letter")
+def generate_cover_letter(request: Request, opportunity_id: int) -> RedirectResponse:
+    service = _service(request)
+    if service.get_opportunity(opportunity_id) is None:
+        raise HTTPException(status_code=404, detail="opportunity not found")
+
+    try:
+        _document_service(request).generate_cover_letter(opportunity_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    return RedirectResponse(url=f"/opportunities/{opportunity_id}", status_code=303)
+
+
+@router.post("/opportunities/{opportunity_id}/documents/fit-report")
+def generate_fit_report(request: Request, opportunity_id: int) -> RedirectResponse:
+    service = _service(request)
+    if service.get_opportunity(opportunity_id) is None:
+        raise HTTPException(status_code=404, detail="opportunity not found")
+
+    try:
+        _document_service(request).generate_fit_report(opportunity_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    return RedirectResponse(url=f"/opportunities/{opportunity_id}", status_code=303)
+
+
 def _choice(value: str, allowed: set[str]) -> str:
     if value not in allowed:
         raise ValueError(f"unsupported choice: {value}")

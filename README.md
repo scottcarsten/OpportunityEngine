@@ -159,16 +159,18 @@ Working today:
 - Importing and versioning a master résumé as permanent, read-only source
   material (`/resume`) — a correction is always a new version; nothing
   can edit or delete one once imported
-- Generating a tailored résumé draft per opportunity via Claude Opus 5,
-  grounded only in the current master résumé, with any unsupported claim
-  in the draft flagged for review — only available once you've made a
-  "Request preparation" review decision on that opportunity
+- Generating a tailored résumé, cover letter, and fit report per
+  opportunity via Claude Opus 5 — the résumé and cover letter are
+  grounded only in the current master résumé, the fit report synthesizes
+  an opportunity's existing score into readable prose; any unsupported
+  claim is flagged for review, and all three are only available once
+  you've made a "Request preparation" review decision on that opportunity
+  (the fit report also needs a completed score first)
 - Automated test suite and GitHub Actions CI
 
 Not implemented yet:
 
-- Cover-letter/fit-report generation, document approval states, and
-  DOCX/PDF export
+- Document approval states and DOCX/PDF export
 - Applications, email, or any external action
 
 ---

@@ -224,26 +224,24 @@
       {% endfor %}
       {% endif %}
     </section>
+    {% macro document_section(opportunity_id, label, route_suffix, docs, can_generate, disabled_reason) %}
     <section class="bg-white border rounded p-4 mt-4">
-      <h2 class="h4">Tailored r&eacute;sum&eacute;</h2>
+      <h2 class="h4">{{ label }}</h2>
       <p class="small text-secondary">
         Drafted from the master r&eacute;sum&eacute; only &mdash; never edits it.
         Reviewing and approving a draft is not implemented yet; this is a
         draft for you to read.
       </p>
-      {% if opportunity.lifecycle_status == "preparing" %}
-      <form method="post" action="/opportunities/{{ opportunity.id }}/documents/tailored-resume" class="mb-3">
-        <button type="submit" class="btn btn-sm btn-primary">Generate tailored r&eacute;sum&eacute;</button>
+      {% if can_generate %}
+      <form method="post" action="/opportunities/{{ opportunity_id }}/documents/{{ route_suffix }}" class="mb-3">
+        <button type="submit" class="btn btn-sm btn-primary">Generate {{ label|lower }}</button>
       </form>
       {% else %}
-      <p class="small text-secondary">
-        Only opportunities with a "Request preparation" decision can have
-        documents generated.
-      </p>
+      <p class="small text-secondary">{{ disabled_reason }}</p>
       {% endif %}
 
-      {% if opportunity.generated_documents %}
-      {% set latest_doc = opportunity.generated_documents[0] %}
+      {% if docs %}
+      {% set latest_doc = docs[0] %}
       <div class="border-top pt-3">
         <div class="d-flex justify-content-between align-items-baseline">
           <strong>Version {{ latest_doc.version }}</strong>
@@ -272,9 +270,9 @@
       </div>
       {% endif %}
 
-      {% if opportunity.generated_documents|length > 1 %}
+      {% if docs|length > 1 %}
       <h3 class="h6 mt-4">Generation history</h3>
-      {% for doc in opportunity.generated_documents[1:] %}
+      {% for doc in docs[1:] %}
       <div class="border-top py-2 small">
         <div>
           Version {{ doc.version }} &middot; {{ doc.status|replace("_", " ")|title }}
@@ -285,6 +283,19 @@
       {% endfor %}
       {% endif %}
     </section>
+    {% endmacro %}
+
+    {% set preparing = opportunity.lifecycle_status == "preparing" %}
+    {% set has_scoring = opportunity.scoring_runs and opportunity.scoring_runs|selectattr("status", "equalto", "succeeded")|list %}
+    {% set not_preparing_reason = 'Only opportunities with a "Request preparation" decision can have documents generated.' %}
+
+    {{ document_section(opportunity.id, "Tailored r&eacute;sum&eacute;"|safe, "tailored-resume",
+                         opportunity.generated_documents.tailored_resume, preparing, not_preparing_reason) }}
+    {{ document_section(opportunity.id, "Cover letter", "cover-letter",
+                         opportunity.generated_documents.cover_letter, preparing, not_preparing_reason) }}
+    {{ document_section(opportunity.id, "Fit report", "fit-report",
+                         opportunity.generated_documents.fit_report, preparing and has_scoring,
+                         not_preparing_reason if not preparing else "Score this opportunity before generating a fit report.") }}
   </div>
 </div>
 {% endblock %}
