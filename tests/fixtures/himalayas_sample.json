@@ -1,0 +1,33 @@
+{
+    "totalCount": 2,
+    "jobs": [
+        {
+            "title": "Senior Systems Administrator",
+            "companyName": "Acme Corp",
+            "employmentType": "Contractor",
+            "minSalary": 90000,
+            "maxSalary": 120000,
+            "salaryPeriod": "annual",
+            "locationRestrictions": ["United States", "Canada"],
+            "categories": ["System-Administration", "IT-Infrastructure"],
+            "description": "<p>Own our <strong>Azure and AWS</strong> environments. No travel required.</p>",
+            "pubDate": 1785947474,
+            "applicationLink": "https://himalayas.app/companies/acme-corp/jobs/senior-systems-administrator",
+            "guid": "https://himalayas.app/companies/acme-corp/jobs/senior-systems-administrator"
+        },
+        {
+            "title": "IT Infrastructure Engineer",
+            "companyName": "Globex Inc",
+            "employmentType": "Full Time",
+            "minSalary": null,
+            "maxSalary": null,
+            "salaryPeriod": "annual",
+            "locationRestrictions": ["Worldwide"],
+            "categories": ["IT-Infrastructure"],
+            "description": "<p>Must hold an active security clearance. Some travel required.</p>",
+            "pubDate": 1785947000,
+            "applicationLink": "https://himalayas.app/companies/globex/jobs/it-infrastructure-engineer",
+            "guid": "https://himalayas.app/companies/globex/jobs/it-infrastructure-engineer"
+        }
+    ]
+}

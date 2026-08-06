@@ -84,6 +84,19 @@ three, and a direct mapping from the RSS's already-structured `<type>`
 field for full-time-replacement — while still defaulting to unknown
 (manual review) whenever a listing doesn't clearly say. See `OE-ADR-021`.
 
+Three more sources are live: Himalayas (`backend/adapters/himalayas.py`,
+run via `python -m backend.cli collect himalayas`), Remotive
+(`backend/adapters/remotive.py`, `collect remotive`), and Jobspresso
+(`backend/adapters/jobspresso.py`, `collect jobspresso`). Unlike We Work
+Remotely, each of these publishes every remote job across every
+industry, not just DevOps/Sysadmin, so each adapter filters for relevance
+at `fetch()` time using whatever signal that source actually offers
+(Himalayas' own search query, Remotive's structured category tag, or a
+keyword scan for Jobspresso). Himalayas is also the first source with
+real structured compensation data. See `OE-ADR-022` for the full
+per-source research and design rationale, including which of the 16
+originally-requested sources were dropped and why.
+
 ### Milestone 3 — Deduplication and hard filters
 
 - [x] Generate deterministic opportunity fingerprints.

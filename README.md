@@ -140,10 +140,11 @@ Working today:
 - SQLAlchemy models and Alembic-managed database migrations, with SQLite
   constitutional safeguards enforced as triggers
 - Manual opportunity entry
-- Automated collection from one approved source (We Work Remotely's
-  DevOps and Sysadmin RSS feed) via `python -m backend.cli collect
-  we_work_remotely`, sharing the same normalization and hard-filter path
-  as manual entry
+- Automated collection from four approved sources — We Work Remotely,
+  Himalayas, Remotive, and Jobspresso — via `python -m backend.cli
+  collect <source>`, each relevance-filtered to IT/infrastructure roles
+  at collection time and sharing the same normalization and hard-filter
+  path as manual entry
 - Deterministic exact-fingerprint deduplication, plus similarity-based
   likely-duplicate detection
 - An explicit, audited manual override of a hard-filter eligibility

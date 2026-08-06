@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss xmlns:dc="http://purl.org/dc/elements/1.1/" version="2.0">
+    <channel>
+        <title>Remotive Remote Jobs RSS Feed</title>
+        <link>https://remotive.com/remote-jobs</link>
+        <description>Remotive is where top talents go to easily access active and fully remote job opportunities from vetted tech companies.</description>
+        <item>
+            <title>Senior DevOps Engineer</title>
+            <jobId>1000001</jobId>
+            <company>Acme Corp</company>
+            <location>Worldwide</location>
+            <type>contract</type>
+            <guid isPermaLink="false">https://remotive.com/remote-jobs/devops/senior-devops-engineer-1000001</guid>
+            <link>https://remotive.com/remote-jobs/devops/senior-devops-engineer-1000001</link>
+            <pubDate>Wed, 05 Aug 2026 09:45:42 GMT</pubDate>
+            <category>Devops</category>
+            <description><![CDATA[<p>Own our Azure and AWS environments. No travel required.</p>]]></description>
+        </item>
+        <item>
+            <title>Sales Development Representative</title>
+            <jobId>1000002</jobId>
+            <company>Globex Inc</company>
+            <location>Europe</location>
+            <type>full_time</type>
+            <guid isPermaLink="false">https://remotive.com/remote-jobs/sales/sdr-1000002</guid>
+            <link>https://remotive.com/remote-jobs/sales/sdr-1000002</link>
+            <pubDate>Wed, 05 Aug 2026 09:00:00 GMT</pubDate>
+            <category>Sales</category>
+            <description><![CDATA[<p>Sell our SaaS product to new customers.</p>]]></description>
+        </item>
+        <item>
+            <title>IT Support Specialist</title>
+            <jobId>1000003</jobId>
+            <company>Initech</company>
+            <location>United States</location>
+            <type>full_time</type>
+            <guid isPermaLink="false">https://remotive.com/remote-jobs/it/it-support-specialist-1000003</guid>
+            <link>https://remotive.com/remote-jobs/it/it-support-specialist-1000003</link>
+            <pubDate>Wed, 05 Aug 2026 08:00:00 GMT</pubDate>
+            <category>Information Technology</category>
+            <description><![CDATA[<p>Must hold an active security clearance.</p>]]></description>
+        </item>
+    </channel>
+</rss>

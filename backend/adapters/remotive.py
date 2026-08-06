@@ -1,15 +1,16 @@
-"""We Work Remotely: DevOps and Sysadmin RSS adapter.
+"""Remotive: general remote-jobs RSS feed, filtered to IT-relevant categories.
 
-The feed is publicly syndicated for exactly this purpose and needs no API
-key. It publishes no compensation, tax-type, or schedule data, so
-`normalize()` maps those to `"unknown"`/`None`. Travel, relocation, and
-clearance requirements aren't structured fields either, but are often
-stated in the free-text description — `normalize()` runs deterministic
-pattern matching over it (`backend/adapters/signal_extraction.py`,
-`OE-ADR-021`) rather than leaving those permanently unknown. Whatever
-isn't caught still falls back to `None`, and the existing hard-filter
-logic routes unknown values to `manual_review` rather than
-auto-approving them.
+Unlike We Work Remotely's dedicated DevOps/Sysadmin category, Remotive's
+feed spans every industry (verified live: Sales, Design, Writing, ...).
+Each item does carry a structured `<category>` tag, though, so `fetch()`
+filters to the two categories that match the constitution's focus areas
+before any item becomes a `RawOpportunityRecord` — precise, structured
+filtering, not a keyword guess. `Software Development` is deliberately
+excluded: too broad, mostly generic app-dev roles outside scope, same
+precision-over-recall bias as `OE-ADR-021`. See `OE-ADR-022`.
+
+The feed's `?category=` query parameter is silently ignored (verified
+live), so this filter runs client-side over the already-fetched items.
 """
 
 import xml.etree.ElementTree as ET
@@ -27,13 +28,15 @@ from backend.adapters.signal_extraction import (
 from backend.models import EngagementType, OpportunityInput
 from backend.timeutil import now_iso
 
-DEFAULT_FEED_URL = "https://weworkremotely.com/categories/remote-devops-sysadmin-jobs.rss"
+DEFAULT_FEED_URL = "https://remotive.com/remote-jobs/feed"
 _USER_AGENT = "OpportunityEngine/0.1 (personal opportunity-research tool)"
+_RELEVANT_CATEGORIES = {"devops", "information technology"}
 
-_ENGAGEMENT_TYPE_MAP: dict[str, EngagementType] = {
-    "full-time": "full_time",
+_JOB_TYPE_MAP: dict[str, EngagementType] = {
+    "full_time": "full_time",
+    "part_time": "part_time",
     "contract": "contract",
-    "part-time": "part_time",
+    "freelance": "contract",
     "temporary": "temporary",
 }
 
@@ -44,10 +47,10 @@ def _default_http_get(url: str) -> str:
     return response.text
 
 
-class WeWorkRemotelyAdapter:
-    """Fetch and normalize the We Work Remotely DevOps/Sysadmin RSS feed."""
+class RemotiveAdapter:
+    """Fetch and normalize IT-relevant Remotive listings."""
 
-    source_name = "We Work Remotely: DevOps and Sysadmin"
+    source_name = "Remotive"
     source_type = "rss"
 
     def __init__(
@@ -67,6 +70,9 @@ class WeWorkRemotelyAdapter:
         records = []
         retrieved_at = now_iso()
         for item in items:
+            category = (item.findtext("category") or "").strip().lower()
+            if category not in _RELEVANT_CATEGORIES:
+                continue
             fields = {child.tag: (child.text or "") for child in item}
             link = fields.get("link", "").strip()
             guid = fields.get("guid", "").strip() or link
@@ -84,29 +90,15 @@ class WeWorkRemotelyAdapter:
 
     def normalize(self, record: RawOpportunityRecord) -> OpportunityInput:
         fields = record.raw_payload
-        title_field = fields.get("title", "").strip()
-        if ": " in title_field:
-            organization_name, title = title_field.split(": ", 1)
-        else:
-            organization_name, title = "", title_field
 
-        location_parts = [
-            fields.get("region", "").strip(),
-            fields.get("country", "").strip(),
-            fields.get("state", "").strip(),
-        ]
-        location_text = ", ".join(part for part in location_parts if part)
-
-        engagement_type = _ENGAGEMENT_TYPE_MAP.get(
+        engagement_type = _JOB_TYPE_MAP.get(
             fields.get("type", "").strip().lower(), "unknown"
         )
-
         description = strip_html(fields.get("description", ""))
 
-        # The RSS <type> field is structured, not free text: an explicit
-        # "Full-Time" listing is a permanent-employment role that would
-        # replace Scott's day job, so it maps directly rather than needing
-        # a text scan. Unknown engagement types stay unknown here too.
+        # Structured data, not free text: an explicit "full_time" listing
+        # is a permanent-employment role that would replace Scott's day
+        # job, same reasoning as WeWorkRemotelyAdapter (OE-ADR-021).
         if engagement_type == "full_time":
             replaces_full_time_work = True
         elif engagement_type == "unknown":
@@ -115,11 +107,11 @@ class WeWorkRemotelyAdapter:
             replaces_full_time_work = False
 
         return OpportunityInput(
-            title=title,
-            organization_name=organization_name,
+            title=fields.get("title", "").strip(),
+            organization_name=fields.get("company", "").strip(),
             description=description,
             source_url=record.canonical_url,
-            location_text=location_text,
+            location_text=fields.get("location", "").strip(),
             remote_status="remote",
             engagement_type=engagement_type,
             tax_type="unknown",

@@ -7,6 +7,9 @@ command; cron/systemd scheduling is deliberately not wired up yet.
 import argparse
 import sys
 
+from backend.adapters.himalayas import HimalayasAdapter
+from backend.adapters.jobspresso import JobspressoAdapter
+from backend.adapters.remotive import RemotiveAdapter
 from backend.adapters.we_work_remotely import WeWorkRemotelyAdapter
 from backend.config import get_settings
 from backend.database import Database
@@ -15,6 +18,9 @@ from backend.services.constitution_service import load_constitution
 
 ADAPTERS = {
     "we_work_remotely": WeWorkRemotelyAdapter,
+    "himalayas": HimalayasAdapter,
+    "remotive": RemotiveAdapter,
+    "jobspresso": JobspressoAdapter,
 }
 
 

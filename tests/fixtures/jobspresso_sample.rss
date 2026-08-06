@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0"
+	xmlns:dc="http://purl.org/dc/elements/1.1/"
+	>
+<channel>
+	<title>Jobs &#8211; Jobspresso</title>
+	<link>https://jobspresso.co</link>
+	<description>Jobspresso is the easiest way to find remote jobs and careers at interesting and innovative companies.</description>
+	<item>
+		<title>Remote Cloud Infrastructure Engineer</title>
+		<link>https://jobspresso.co/job/acme-corp-remote-cloud-infrastructure-engineer/</link>
+		<dc:creator><![CDATA[Acme Corp<br>&#9906;&nbsp;US, Canada, Europe]]></dc:creator>
+		<pubDate>Thu, 23 Jul 2026 16:56:41 +0000</pubDate>
+		<guid isPermaLink="false">https://jobspresso.co/?post_type=job_listing&#038;p=100001</guid>
+		<description><![CDATA[<p>Own our AWS and Azure environments. No relocation required.</p>]]></description>
+	</item>
+	<item>
+		<title>Remote Stock &#038; Options Trader</title>
+		<link>https://jobspresso.co/job/maverick-trading-remote-stock-options-trader/</link>
+		<dc:creator><![CDATA[Maverick Trading<br>&#9906;&nbsp;US, Canada, Americas, Europe]]></dc:creator>
+		<pubDate>Thu, 23 Jul 2026 16:56:41 +0000</pubDate>
+		<guid isPermaLink="false">https://jobspresso.co/?post_type=job_listing&#038;p=100002</guid>
+		<description><![CDATA[<p>Trade with real capital and keep the lion's share of what you earn.</p>]]></description>
+	</item>
+</channel>
+</rss>

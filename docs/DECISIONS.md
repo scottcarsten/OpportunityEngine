@@ -808,3 +808,85 @@ himself, which is the opposite of the point.
 - Any future source adapter facing the same "free text has the answer,
   structured fields don't" gap reuses
   `backend/adapters/signal_extraction.py` rather than re-solving it.
+
+---
+
+## OE-ADR-022 — Three more sources, each relevance-filtered at fetch time
+
+**Status:** Accepted
+**Date:** 2026-08-06
+
+### Context
+
+Scott asked to add 16 named job boards. A live research pass (checking
+each site directly, not from memory) found most weren't viable: `jobs.
+github.com`, CloudPeeps, and Toggl Hire are defunct or being
+discontinued; Virtual Vocations and Jobgether explicitly prohibit
+scraping/data-mining in their ToS; Outsourcely, Contra, and RemoFirst
+aren't job-listings boards at all (an employer-side freelancer directory,
+a freelancer marketplace, and an Employer-of-Record/payroll company,
+respectively — confirmed, not guessed); "hesxjobs" doesn't exist (Scott
+confirmed it was a typo for Hexjobs, whose robots.txt disallows crawling
+its own job pages regardless). Three — **Himalayas**, **Remotive**,
+**Jobspresso** — have a real public feed/API and no scraping involved,
+the same bar `WeWorkRemotelyAdapter` (`OE-ADR-015`) already clears.
+
+Live-probing each (not guessing) surfaced a shared problem: unlike We
+Work Remotely's dedicated DevOps/Sysadmin category feed, all three of
+these are general "every remote job, every industry" feeds — an HVAC
+role, a Sales role, and a stock-trader role were each site's first live
+item. Ingesting them unfiltered would flood Scott's review queue and
+spend his Opus 5 scoring budget on irrelevant listings — the exact noise
+problem this tool exists to eliminate. Each site's *best available*
+filtering mechanism turned out to differ, so each adapter filters
+differently, in order of preference (structured query, then structured
+per-item field, then keyword scan as the fallback):
+
+### Decision
+
+- **`backend/adapters/himalayas.py`**: filters via the site's own free,
+  unauthenticated JSON search API (`/jobs/api/search`), which supports a
+  boolean-`OR` query — verified live to return 52 highly relevant results
+  for a query built from the constitution's focus areas. This is
+  filtering at the source, the strongest option, and a bonus: it's the
+  first source with real structured compensation
+  (`minSalary`/`maxSalary`/`salaryPeriod`) and a clean `employmentType`
+  enum, so both flow into `OpportunityInput` directly instead of staying
+  `None`/`unknown`.
+- **`backend/adapters/remotive.py`**: its RSS items carry a structured
+  `<category>` tag (verified live: `Devops`, `Information Technology`,
+  `Software Development`, `Sales`, ...); `fetch()` keeps only `Devops`
+  and `Information Technology`. `Software Development` is deliberately
+  excluded — too broad, mostly generic app-dev roles outside scope, same
+  precision-over-recall bias as `OE-ADR-021`. The feed's `?category=`
+  query parameter is silently ignored (verified live), so this filters
+  client-side over already-fetched items, not via a smarter request.
+- **`backend/adapters/jobspresso.py`**: exposes no category or
+  engagement-type field at all, and its category-specific feed URLs
+  return zero items live. Falls back to the same deterministic,
+  precision-biased keyword scan `OE-ADR-021` established for hard-filter
+  signals, applied here to relevance instead — missing a borderline
+  listing is fine, flooding the queue with false positives is not.
+- All three reuse `backend/adapters/signal_extraction.py` for
+  travel/relocation/clearance and the same `engagement_type`-derived
+  `replaces_full_time_work` mapping as `OE-ADR-021`. Jobspresso exposes no
+  engagement type at all, so that field stays `unknown`/`None` there, same
+  as any We Work Remotely listing with an unrecognized `<type>`.
+- `_HTMLTextExtractor`/`_strip_html` moved out of `we_work_remotely.py`
+  into `backend/adapters/html_text.py` — three more adapters need HTML
+  stripping now, not one.
+
+### Consequences
+
+- Adding a source is no longer "does it have RSS shaped exactly like We
+  Work Remotely's" — it's "what's the best relevance signal this
+  particular site actually offers," decided per source rather than forcing
+  a single filtering strategy on all of them.
+- Himalayas is the richest source collected so far: real compensation
+  data lets scoring's `compensation_potential` dimension (`OE-ADR-017`)
+  work with real numbers instead of "not specified" for the first time.
+- Of the 16 originally-requested sites, 13 were dropped for concrete,
+  verified reasons (defunct, ToS-prohibited, not actually a job board, or
+  nonexistent) rather than left unresolved — see the research this ADR is
+  based on for the full per-site breakdown if a dropped source is ever
+  revisited.
