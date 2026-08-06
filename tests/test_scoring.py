@@ -110,7 +110,7 @@ def test_scoring_ineligible_opportunity_raises(tmp_path: Path) -> None:
     opportunity_id = _ineligible_opportunity(opp_service)
 
     scoring_service = ScoringService(database, constitution, FakeScoringProvider())
-    with pytest.raises(ValueError, match="eligible"):
+    with pytest.raises(ValueError, match="hard filters"):
         scoring_service.score_opportunity(opportunity_id)
 
 
@@ -133,6 +133,19 @@ def test_scoring_eligible_opportunity_creates_run_and_components(tmp_path: Path)
     assert runs[0].provider == "fake"
     assert len(components) == len(COMPONENT_WEIGHTS)
     assert sum(c.weight for c in components) == pytest.approx(1.0)
+
+
+def test_scoring_a_preparing_opportunity_still_works(tmp_path: Path) -> None:
+    opp_service, database, constitution = _opportunity_service(tmp_path)
+    opportunity_id = _eligible_opportunity(opp_service)
+    opp_service.record_review_decision(opportunity_id, "request_preparation")
+
+    scoring_service = ScoringService(database, constitution, FakeScoringProvider())
+    result = scoring_service.score_opportunity(opportunity_id)
+
+    assert result["status"] == "succeeded"
+    opportunity = opp_service.get_opportunity(opportunity_id)
+    assert opportunity["lifecycle_status"] == "preparing"
 
 
 def test_rescoring_creates_a_second_run_not_an_update(tmp_path: Path) -> None:

@@ -139,7 +139,7 @@ class AnthropicScoringProvider:
 
         response = self._client.messages.parse(
             model=self.model_name,
-            max_tokens=4096,
+            max_tokens=8192,
             system=system_prompt,
             messages=[{"role": "user", "content": user_content}],
             output_format=_ScoringResponseModel,

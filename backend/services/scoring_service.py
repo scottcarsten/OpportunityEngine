@@ -36,9 +36,17 @@ class ScoringService:
             ).mappings().first()
             if opportunity is None:
                 raise ValueError(f"opportunity not found: {opportunity_id}")
-            if opportunity["lifecycle_status"] != "eligible":
+            # "new" (not yet vetted) and "ineligible" (failed hard filters)
+            # are the only statuses that never passed hard filters; every
+            # other status (eligible, shortlisted, deferred, rejected,
+            # preparing) is reachable only via an opportunity that did, so
+            # scoring/re-scoring stays available through the rest of the
+            # review lifecycle rather than being locked out the moment
+            # Scott requests preparation. Scoring never writes
+            # lifecycle_status, so allowing it here changes nothing else.
+            if opportunity["lifecycle_status"] in ("new", "ineligible"):
                 raise ValueError(
-                    "only opportunities with lifecycle_status 'eligible' can be scored"
+                    "only opportunities that have passed the hard filters can be scored"
                 )
 
             opportunity_dict = dict(opportunity)
