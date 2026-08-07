@@ -1,4 +1,4 @@
-"""Manually-started Telegram command listener (OE-ADR-035, OE-ADR-036).
+"""Manually-started Telegram command listener (OE-ADR-035, OE-ADR-036, OE-ADR-037).
 
 Long-polls Telegram's getUpdates API and replies to /status, /pending,
 /new, /newsearch from Scott's configured chat only - every other chat
@@ -10,6 +10,12 @@ Also runs a full collection+sweep cycle across every source on its own,
 every `background_check_interval_minutes` (default 30), without
 needing /newsearch - the project's actual background scheduler. Stays
 silent on a normal run; only messages Scott if something failed.
+
+And, if configured, checks a dedicated job-search mailbox for new
+employer replies every `mail_check_interval_minutes` (default 10) via
+Microsoft Graph - alerts on everything, since that inbox is blank and
+dedicated, and best-effort correlates each message to an applied
+opportunity without ever gating the alert on a successful match.
 
 Run with:
     python -m backend.telegram_bot
@@ -27,12 +33,15 @@ import httpx
 from backend.cli import ADAPTERS
 from backend.config import Settings, get_settings
 from backend.database import Database
+from backend.db.models import Notification
+from backend.graph_mail import check_mail
 from backend.jobs import run_collection
 from backend.logging_config import configure_logging
 from backend.notifications import send_telegram
 from backend.services.constitution_service import Constitution, load_constitution
 from backend.services.opportunity_service import OpportunityService
 from backend.services.reporting_service import ReportingService
+from backend.timeutil import now_iso
 
 _USAGE_TEXT = "Unknown command. Try /status, /pending, /new, or /newsearch."
 _MAX_LISTED = 10
@@ -204,6 +213,8 @@ def main(settings: Settings | None = None) -> int:
     offset: int | None = None
     interval_seconds = settings.background_check_interval_minutes * 60
     next_check = time.monotonic()  # due immediately on startup
+    mail_interval_seconds = settings.mail_check_interval_minutes * 60
+    next_mail_check = time.monotonic()  # due immediately on startup
     logger.info("Telegram listener started.")
     print(f"Telegram listener started, logging to {_LOG_FILE}. Ctrl+C to stop.")
     try:
@@ -247,6 +258,35 @@ def main(settings: Settings | None = None) -> int:
                     if not sent:
                         logger.warning("Failed to send periodic alert: %s", error)
                 next_check = time.monotonic() + interval_seconds
+
+            if mail_interval_seconds > 0 and time.monotonic() >= next_mail_check:
+                logger.info("Running mail check.")
+                try:
+                    alerts = check_mail(database, constitution, settings)
+                except Exception:
+                    logger.exception("Mail check failed unexpectedly.")
+                    alerts = []
+                for alert in alerts:
+                    sent, error = send_telegram(
+                        settings.telegram_bot_token, settings.telegram_chat_id, alert["text"]
+                    )
+                    if not sent:
+                        logger.warning("Failed to send mail alert: %s", error)
+                    with database.session() as session:
+                        session.add(
+                            Notification(
+                                opportunity_id=alert["opportunity_id"],
+                                notification_type="employer_reply",
+                                channel="telegram",
+                                status="sent" if sent else "failed",
+                                subject=alert["subject"],
+                                body=alert["body"],
+                                sent_at=now_iso() if sent else None,
+                                error_summary=error,
+                            )
+                        )
+                        session.commit()
+                next_mail_check = time.monotonic() + mail_interval_seconds
     except KeyboardInterrupt:
         logger.info("Telegram listener stopped (Ctrl+C).")
         print("Stopped.")

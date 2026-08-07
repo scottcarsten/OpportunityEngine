@@ -1962,3 +1962,113 @@ Scott chose a 30-minute check interval.
 - Notification volume stays low by design — only real problems (a
   source failing) interrupt Scott; routine "found nothing new" cycles
   are invisible unless he checks `/status` or the log directly.
+
+---
+
+## OE-ADR-037 — Employer-reply monitoring via Microsoft Graph
+
+**Status:** Accepted
+**Date:** 2026-08-07
+
+### Context
+
+This is the feature `OE-ADR-035`/`036` were building toward: real-time
+awareness of employer replies, fast enough that Scott can respond from
+his phone during a work break — his own analogy is the same kind of
+short interrupt as taking a call from his kid's school, not a full
+context-switch. It reads a dedicated, intentionally blank email account
+(`lonestaritservices@outlook.com`) — the original plan named Gmail, but
+Scott lost access to that blank account before ever using it, so this
+became a Microsoft Graph integration instead. Same isolation discipline
+either way: nothing personal ever touches this address, mirroring the
+credential-isolation pattern his separate vCISO tool already uses.
+
+Scott confirmed two things directly: he'll switch this address to be
+his outward-facing contact email on applications going forward (without
+that, there's nothing for this to ever catch), and — since the inbox is
+dedicated and blank — **any** new mail should alert. Matching a message
+to a specific applied opportunity is best-effort enrichment, not a
+gate; a failed match must never mean a missed alert.
+
+### Why `OE-ADR-033`'s integration-gating principle doesn't apply here
+
+`OE-ADR-033` requires any future integration performing a *restricted*
+action (sending email, applying) to go through `ApprovalService`. This
+integration takes no action on Scott's behalf and touches nothing
+external — it only reads a mailbox he owns. That's the same category as
+self-notifying via `ntfy`/Telegram (`OE-ADR-029`), just with a real
+external read instead of a local push. No `ApprovalRequest` involved,
+and none should be — gating a read that affects nobody would just add
+friction with no safety benefit.
+
+Also deliberately skipping `OE-ADR-033` point 4's provider-Protocol
+abstraction: that principle was written for swappable *action*
+providers behind a common interface. There's no second mail provider to
+swap to here, and building one architecture for a single concrete
+integration is speculative abstraction, not swappability.
+
+### Decision
+
+- New dependency: `msal`, Microsoft's own auth library — handles OAuth2
+  device-code flow and token-cache persistence/silent refresh correctly,
+  the same reasoning as using the official `anthropic` SDK instead of
+  raw HTTP.
+- **Device-code flow, no client secret**: the app is registered as a
+  public client in Azure (`portal.azure.com`, free, no Microsoft 365
+  subscription needed even for a personal Outlook.com account). First
+  run prints a one-time sign-in URL/code; the resulting token
+  (including a refresh token) is cached to `data/graph_token_cache.json`
+  (gitignored) and silently renewed after that — no secret to ever leak,
+  no repeated logins.
+- **`Mail.Read` scope only.** Structurally read-only — this integration
+  cannot send, delete, or modify anything, regardless of what the code
+  does, because the token itself was never granted that power.
+- **Delta queries, not full-inbox scans**: `/me/mailFolders/inbox
+  /messages/delta`, persisting Microsoft's own continuation token
+  (`data/graph_delta_link.txt`, gitignored) so each check only costs
+  what's actually new. The **first-ever check has no prior baseline**,
+  so Graph returns the entire current inbox as "changes" — that batch
+  is discarded (not alerted on) and only used to establish the
+  baseline; every later check reports genuinely new mail. Without this,
+  shipping the feature would instantly flood Scott with alerts for
+  whatever was already sitting in an inbox that's supposed to be blank.
+- **`correlate_opportunity()` is best-effort and non-blocking**: checks
+  sender domain/display name against the `organization_name` of
+  opportunities Scott has marked applied
+  (`OpportunityService.list_opportunities(lifecycle_status="applied")`,
+  `OE-ADR-034`) — deliberately simple string matching, not a scoring
+  model. A miss just means the alert says "unmatched" instead of naming
+  a company; it never suppresses the alert.
+- Uses Graph's `bodyPreview` field (a short, plain-text preview
+  Microsoft already generates) instead of parsing the full HTML body —
+  avoids an HTML-stripping dependency for a deliberately small feature.
+- **Reuses the existing `notifications` table** — `notification_type=
+  "employer_reply"`, `channel="telegram"`, `opportunity_id` set to the
+  best-effort match or left `NULL` (the column was already nullable) —
+  no new schema. Every alert is both sent to Telegram and recorded here,
+  same audit-trail pattern as every other notification in this project.
+- Wired into `backend/telegram_bot.py`'s existing loop as a second,
+  independent `time.monotonic()` timer alongside `OE-ADR-036`'s
+  collection check — its own `mail_check_interval_minutes` (default
+  10, tighter than the 30-minute collection interval since reply speed
+  is the actual point of this feature, and Graph's delta queries are
+  lightweight enough to support it). Auth/network/API failures are
+  caught and logged, never crash the listener — same resilience pattern
+  already in place for `get_updates`/`run_periodic_collection`.
+
+### Explicitly out of scope for this slice
+
+- Sending anything — no `Mail.Send` scope requested at all.
+- A dedicated "inbox" dashboard page — the Telegram alert is the
+  interface; the `Notification` row is the audit trail, viewable the
+  same way any other notification already is.
+- Marking a detected reply "handled" — no new state to manage yet.
+
+### Consequences
+
+- Scott gets alerted on real employer responses fast enough to act on
+  them from his phone, closing the loop this project's notification
+  infrastructure (`OE-ADR-029`/`030`/`035`/`036`) was built toward.
+- The correlation heuristic will sometimes miss or mismatch — by
+  design, that's an acceptable cost since it never costs Scott a real
+  alert, only occasionally the company name attached to one.

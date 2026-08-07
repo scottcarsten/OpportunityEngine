@@ -29,6 +29,11 @@ class Settings(BaseSettings):
     telegram_bot_token: str | None = None
     telegram_chat_id: str | None = None
     background_check_interval_minutes: int = 30
+    ms_graph_client_id: str | None = None
+    ms_graph_tenant_id: str = "consumers"
+    mail_check_interval_minutes: int = 10
+    graph_token_cache_path: Path = Path("data/graph_token_cache.json")
+    graph_delta_link_path: Path = Path("data/graph_delta_link.txt")
 
     @field_validator("host")
     @classmethod

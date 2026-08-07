@@ -315,6 +315,16 @@ the project's actual background scheduler, closing the gap
 `OE-ADR-035` flagged as a prerequisite for future Gmail-response
 monitoring. See `OE-ADR-036`.
 
+**Bonus slice**: real-time employer-reply monitoring via the Microsoft
+Graph API, reading a dedicated, blank Outlook.com account
+(`lonestaritservices@outlook.com`) that Scott will use as his
+outward-facing contact email going forward. Read-only (`Mail.Read`
+only — never sends anything); checks every 10 minutes via delta query;
+alerts on every new message since the inbox is dedicated, with a
+best-effort match to an applied opportunity that never gates the
+alert. Runs inside the same Telegram listener process as the other two
+background pieces above. See `OE-ADR-037`.
+
 Opportunity aging and stale-listing detection is v0.3's first slice.
 Digging into the schema before building anything found `expires_at`,
 `last_seen_at`, and the `expired`/`closed` lifecycle states already
