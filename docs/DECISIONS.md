@@ -1909,3 +1909,56 @@ so hard to isolate — confirmed directly by printing `logger.disabled`
 re-enabling everything, so it leaves logging in a genuinely known-good
 state regardless of what ran before it — a real property to hold given
 it exists specifically to give unattended processes a place to look.
+
+---
+
+## OE-ADR-036 — Background scheduler: periodic collection inside the Telegram listener
+
+**Status:** Accepted
+**Date:** 2026-08-07
+
+### Context
+
+`OE-ADR-035` built the project's first continuous background process
+but left it reactive-only — collection and the three sweeps only ran
+via `/newsearch` or the CLI. Since the listener is already
+always-running on Scott's always-on laptop, this closes that gap by
+extending the *same* loop rather than standing up a second process.
+Scott chose a 30-minute check interval.
+
+### Decision
+
+- New `Settings.background_check_interval_minutes` (default `30`,
+  matching Scott's choice). `<= 0` disables periodic checking entirely
+  and falls back to `/newsearch`-only — the same "non-positive/unset
+  disables the feature" convention already used for
+  `telegram_bot_token`. Not something Scott asked for, but cheap and
+  consistent.
+- `run_periodic_collection()` reuses the existing `_run_newsearch()`
+  (already loops every configured adapter via `backend/jobs.py`'s
+  `run_collection`, already catches and reports per-adapter failures) —
+  no separate collection logic. It stays **silent on a normal run** and
+  only returns an alert when something actually failed. A status ping
+  every 30 minutes regardless of findings would just be noise on top of
+  the per-opportunity notifications ingest already sends
+  (`OE-ADR-029`) — those are what's actually supposed to catch Scott's
+  attention, not a heartbeat.
+- Scheduling uses `time.monotonic()`, not wall-clock time — the right
+  tool for "has N minutes elapsed," immune to clock adjustments. Due
+  immediately on process start, so restarting the listener also
+  freshens data right away rather than waiting a full interval.
+  `get_updates()`'s own 30-second long-poll already provides a natural
+  tick to check against — no separate timer thread needed.
+- A failed periodic run is always logged (`data/logs/telegram_bot.log`)
+  regardless of whether it was notable enough to alert Scott about, so
+  the file stays the complete record even on the common silent case.
+
+### Consequences
+
+- The listener is now a genuine background scheduler, not just a
+  command responder — this closes the "nothing runs on its own" gap
+  `OE-ADR-035` flagged as a prerequisite for future Gmail-response
+  monitoring, which needs the same kind of always-running piece.
+- Notification volume stays low by design — only real problems (a
+  source failing) interrupt Scott; routine "found nothing new" cycles
+  are invisible unless he checks `/status` or the log directly.

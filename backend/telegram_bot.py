@@ -1,10 +1,15 @@
-"""Manually-started Telegram command listener (OE-ADR-035).
+"""Manually-started Telegram command listener (OE-ADR-035, OE-ADR-036).
 
 Long-polls Telegram's getUpdates API and replies to /status, /pending,
 /new, /newsearch from Scott's configured chat only - every other chat
 is silently ignored. This is a command dispatcher, not a chatbot: no
 AI, no open-ended replies, just scripted lookups against the same data
 the dashboard shows.
+
+Also runs a full collection+sweep cycle across every source on its own,
+every `background_check_interval_minutes` (default 30), without
+needing /newsearch - the project's actual background scheduler. Stays
+silent on a normal run; only messages Scott if something failed.
 
 Run with:
     python -m backend.telegram_bot
@@ -14,6 +19,7 @@ Stop with Ctrl+C.
 
 import logging
 import sys
+import time
 from pathlib import Path
 
 import httpx
@@ -112,6 +118,22 @@ def _run_newsearch(database: Database, constitution: Constitution) -> str:
     return "Collection complete:\n" + "\n".join(summaries)
 
 
+def run_periodic_collection(database: Database, constitution: Constitution) -> str | None:
+    """Run a full collection+sweep cycle across every adapter.
+
+    Returns an alert message only if something actually failed - a
+    normal "nothing new" run stays silent. Per-opportunity notifications
+    (already wired into ingest, OE-ADR-029) are what surface anything
+    actually worth Scott's attention; a periodic status ping every N
+    minutes regardless of findings would just be noise.
+    """
+    summary = _run_newsearch(database, constitution)
+    logger.info("Periodic collection: %s", summary.replace("\n", " | "))
+    if "failed" in summary:
+        return f"Periodic check found a problem:\n{summary}"
+    return None
+
+
 def dispatch_command(
     command: str,
     database: Database,
@@ -180,6 +202,8 @@ def main(settings: Settings | None = None) -> int:
     configure_logging(settings.log_level, log_file=_LOG_FILE)
 
     offset: int | None = None
+    interval_seconds = settings.background_check_interval_minutes * 60
+    next_check = time.monotonic()  # due immediately on startup
     logger.info("Telegram listener started.")
     print(f"Telegram listener started, logging to {_LOG_FILE}. Ctrl+C to stop.")
     try:
@@ -212,6 +236,17 @@ def main(settings: Settings | None = None) -> int:
                     sent, error = send_telegram(settings.telegram_bot_token, chat_id, reply)
                     if not sent:
                         logger.warning("Failed to send reply: %s", error)
+
+            if interval_seconds > 0 and time.monotonic() >= next_check:
+                logger.info("Running periodic collection check.")
+                alert = run_periodic_collection(database, constitution)
+                if alert:
+                    sent, error = send_telegram(
+                        settings.telegram_bot_token, settings.telegram_chat_id, alert
+                    )
+                    if not sent:
+                        logger.warning("Failed to send periodic alert: %s", error)
+                next_check = time.monotonic() + interval_seconds
     except KeyboardInterrupt:
         logger.info("Telegram listener stopped (Ctrl+C).")
         print("Stopped.")

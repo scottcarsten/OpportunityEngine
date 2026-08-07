@@ -9,7 +9,7 @@ from backend.database import Database
 from backend.models import OpportunityInput
 from backend.services.constitution_service import load_constitution
 from backend.services.opportunity_service import OpportunityService
-from backend.telegram_bot import dispatch_command, handle_update
+from backend.telegram_bot import dispatch_command, handle_update, run_periodic_collection
 
 _CHAT_ID = "12345"
 
@@ -50,6 +50,18 @@ class FakeAdapter:
             requires_clearance=None,
             replaces_full_time_work=None,
         )
+
+
+class FailingAdapter:
+    source_name = "Failing Source"
+    source_type = "fake"
+    base_url = "https://example.com/failing-feed"
+
+    def fetch(self) -> list[RawOpportunityRecord]:
+        raise RuntimeError("feed unreachable")
+
+    def normalize(self, record: RawOpportunityRecord) -> OpportunityInput:
+        raise AssertionError("should never be called")
 
 
 def _setup(tmp_path: Path):
@@ -147,6 +159,30 @@ def test_newsearch_runs_collection_and_reports_summary(
     assert "Collection complete" in reply
     assert "fake_source" in reply
     assert any("Starting collection" in text for text in sent)
+
+
+def test_run_periodic_collection_stays_silent_on_a_clean_run(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    database, constitution = _setup(tmp_path)
+    monkeypatch.setattr("backend.telegram_bot.ADAPTERS", {"fake_source": FakeAdapter})
+
+    alert = run_periodic_collection(database, constitution)
+
+    assert alert is None
+
+
+def test_run_periodic_collection_alerts_on_a_failed_adapter(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    database, constitution = _setup(tmp_path)
+    monkeypatch.setattr("backend.telegram_bot.ADAPTERS", {"failing_source": FailingAdapter})
+
+    alert = run_periodic_collection(database, constitution)
+
+    assert alert is not None
+    assert "failing_source" in alert
+    assert "failed" in alert
 
 
 def test_unknown_command_returns_usage(tmp_path: Path) -> None:

@@ -305,6 +305,16 @@ background process — a real step toward the future Gmail-response
 monitoring idea, which needs the same kind of always-running piece. See
 `OE-ADR-035`.
 
+**Bonus slice**: the Telegram listener now runs a full collection and
+sweep cycle across every source automatically, every 30 minutes by
+default (`OPPORTUNITY_ENGINE_BACKGROUND_CHECK_INTERVAL_MINUTES`),
+without waiting for `/newsearch`. Stays silent on a normal run — only
+messages Scott if a source actually failed, relying on the existing
+per-opportunity notifications for anything worth his attention. This is
+the project's actual background scheduler, closing the gap
+`OE-ADR-035` flagged as a prerequisite for future Gmail-response
+monitoring. See `OE-ADR-036`.
+
 Opportunity aging and stale-listing detection is v0.3's first slice.
 Digging into the schema before building anything found `expires_at`,
 `last_seen_at`, and the `expired`/`closed` lifecycle states already

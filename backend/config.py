@@ -28,6 +28,7 @@ class Settings(BaseSettings):
     enable_api_docs: bool = True
     telegram_bot_token: str | None = None
     telegram_chat_id: str | None = None
+    background_check_interval_minutes: int = 30
 
     @field_validator("host")
     @classmethod
