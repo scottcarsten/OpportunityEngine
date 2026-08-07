@@ -1,4 +1,4 @@
-"""Manually-started Telegram command listener (OE-ADR-035, OE-ADR-036, OE-ADR-037).
+"""Telegram command listener (OE-ADR-035, OE-ADR-036, OE-ADR-037, OE-ADR-039).
 
 Long-polls Telegram's getUpdates API and replies to /status, /pending,
 /new, /newsearch from Scott's configured chat only - every other chat
@@ -15,11 +15,16 @@ And, if configured, checks a dedicated job-search mailbox for new
 employer replies every `mail_check_interval_minutes` (default 10) via
 Microsoft Graph - alerts on everything, since that inbox is blank and
 dedicated, and best-effort correlates each message to an applied
-opportunity without ever gating the alert on a successful match.
+opportunity without ever gating the alert on a successful match. A
+failed mail check (expired Graph auth, a network error) also alerts,
+rather than failing silently.
 
-Run with:
+Runs as a systemd user service (see `systemd/`); `Restart=on-failure`
+recovers from a crash automatically, and `OnFailure=` alerts Scott via
+Telegram if it crash-loops and systemd gives up retrying.
+
+Manual/dev use:
     python -m backend.telegram_bot
-Leave it running in a terminal/tmux/screen on an always-on machine.
 Stop with Ctrl+C.
 """
 
@@ -34,7 +39,7 @@ from backend.cli import ADAPTERS
 from backend.config import Settings, get_settings
 from backend.database import Database
 from backend.db.models import Notification
-from backend.graph_mail import check_mail
+from backend.graph_mail import GraphAuthExpiredError, check_mail
 from backend.jobs import run_collection
 from backend.logging_config import configure_logging
 from backend.notifications import send_telegram
@@ -141,6 +146,59 @@ def run_periodic_collection(database: Database, constitution: Constitution) -> s
     if "failed" in summary:
         return f"Periodic check found a problem:\n{summary}"
     return None
+
+
+def run_mail_check(database: Database, constitution: Constitution, settings: Settings) -> None:
+    """Check the job-search mailbox and alert on both new messages and
+    failures (OE-ADR-039) - a mail-check failure used to be swallowed
+    (logged only); now it alerts the same way a failed collection run
+    already does, with a distinct message when Graph auth has expired
+    since that needs a specific fix (re-running `python -m
+    backend.graph_mail` by hand), not just a retry.
+    """
+    alerts: list[dict] = []
+    try:
+        alerts = check_mail(database, constitution, settings)
+    except GraphAuthExpiredError:
+        logger.warning("Graph auth expired; alerting.")
+        sent, error = send_telegram(
+            settings.telegram_bot_token,
+            settings.telegram_chat_id,
+            "Graph mail auth expired - run `python -m backend.graph_mail` "
+            "on the server to re-authenticate.",
+        )
+        if not sent:
+            logger.warning("Failed to send auth-expired alert: %s", error)
+    except Exception as exc:
+        logger.exception("Mail check failed unexpectedly.")
+        sent, error = send_telegram(
+            settings.telegram_bot_token,
+            settings.telegram_chat_id,
+            f"Mail check failed: {exc}",
+        )
+        if not sent:
+            logger.warning("Failed to send mail-check-failure alert: %s", error)
+
+    for alert in alerts:
+        sent, error = send_telegram(
+            settings.telegram_bot_token, settings.telegram_chat_id, alert["text"]
+        )
+        if not sent:
+            logger.warning("Failed to send mail alert: %s", error)
+        with database.session() as session:
+            session.add(
+                Notification(
+                    opportunity_id=alert["opportunity_id"],
+                    notification_type="employer_reply",
+                    channel="telegram",
+                    status="sent" if sent else "failed",
+                    subject=alert["subject"],
+                    body=alert["body"],
+                    sent_at=now_iso() if sent else None,
+                    error_summary=error,
+                )
+            )
+            session.commit()
 
 
 def dispatch_command(
@@ -261,31 +319,7 @@ def main(settings: Settings | None = None) -> int:
 
             if mail_interval_seconds > 0 and time.monotonic() >= next_mail_check:
                 logger.info("Running mail check.")
-                try:
-                    alerts = check_mail(database, constitution, settings)
-                except Exception:
-                    logger.exception("Mail check failed unexpectedly.")
-                    alerts = []
-                for alert in alerts:
-                    sent, error = send_telegram(
-                        settings.telegram_bot_token, settings.telegram_chat_id, alert["text"]
-                    )
-                    if not sent:
-                        logger.warning("Failed to send mail alert: %s", error)
-                    with database.session() as session:
-                        session.add(
-                            Notification(
-                                opportunity_id=alert["opportunity_id"],
-                                notification_type="employer_reply",
-                                channel="telegram",
-                                status="sent" if sent else "failed",
-                                subject=alert["subject"],
-                                body=alert["body"],
-                                sent_at=now_iso() if sent else None,
-                                error_summary=error,
-                            )
-                        )
-                        session.commit()
+                run_mail_check(database, constitution, settings)
                 next_mail_check = time.monotonic() + mail_interval_seconds
     except KeyboardInterrupt:
         logger.info("Telegram listener stopped (Ctrl+C).")

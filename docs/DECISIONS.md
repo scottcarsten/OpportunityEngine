@@ -2163,3 +2163,103 @@ was found while doing the systemd work.
   machine.
 - Two more hardening slices (alerting-on-listener-down, backups) remain
   queued to fully cover the four angles Scott named for v0.4.
+
+## OE-ADR-039 — Operational visibility: crash-loop alerts, mail-check failure alerts, non-blocking auth
+
+**Status:** Accepted
+**Date:** 2026-08-07
+
+### Context
+
+`OE-ADR-038` made both services auto-restart on crash, which is
+recovery, not awareness — a crash loop, or a mail check silently
+failing every cycle, produced nothing Scott would ever see. Two
+concrete gaps drove this slice:
+
+1. `Restart=on-failure` alone retries forever with no `StartLimit*` set
+   (today's units had none), so a unit never actually reaches systemd's
+   `failed` state — there was no point at which anything could escalate
+   to Scott.
+2. `check_mail()` (`backend/graph_mail.py`) treated "Graph not
+   configured" (expected, permanent), "auth token unavailable," and a
+   real `httpx.HTTPError` identically — all silently `return []` or got
+   caught by `telegram_bot.py`'s bare `except Exception` and only
+   logged. Collection failures already alert via
+   `run_periodic_collection`; mail-check failures didn't — the
+   inconsistency flagged when writing `OE-ADR-038`.
+
+Tracing #2 surfaced a third, more serious latent bug: if the Graph
+refresh token ever expired or was revoked, `get_access_token()` fell
+through to the interactive device-code flow and **blocked
+`telegram_bot.py`'s single main loop** waiting for a browser sign-in
+that can't happen unattended — freezing Telegram commands and the
+collection scheduler too, for up to ~15 minutes, every mail-check
+cycle. Confirmed with Scott: fix it so the background service never
+attempts the interactive flow.
+
+### Decision
+
+- **Crash-loop alerting via systemd, not a Python watchdog.** Both unit
+  files now set `StartLimitIntervalSec=600`/`StartLimitBurst=5` — five
+  crashes in ten minutes before systemd gives up and marks the unit
+  `failed` — and `OnFailure=opportunity-engine-alert@%n.service`.
+  Scott's explicit choice: one or two isolated crashes stay silent
+  (`Restart=on-failure` already handles those), only a real crash-loop
+  escalates. Covers both services, not just the listener.
+- **The alert unit is raw `curl`, not Python** — a new templated
+  oneshot unit, `systemd/opportunity-engine-alert@.service`, POSTs
+  directly to Telegram's `sendMessage` API using
+  `EnvironmentFile=.env` for the token/chat ID. Deliberately bypasses
+  `notifications.send_telegram` entirely: if the failure is in the
+  venv or the application code itself, a Python-based alerter could
+  fail silently at exactly the moment it's needed. This is the one
+  place in the project that talks to Telegram outside
+  `send_telegram`, justified by that reasoning alone.
+- **Past the crash-loop threshold, recovery is manual**
+  (`systemctl --user reset-failed <unit> && systemctl --user restart
+  <unit>`) — intentional; past that point something needs a human, not
+  another silent retry.
+- **`check_mail()` now raises instead of swallowing.** New
+  `GraphAuthExpiredError`; a real `httpx.HTTPError` is no longer caught
+  inside `check_mail()` at all — it propagates. Only "Graph not
+  configured" (`ms_graph_client_id` unset) still returns `[]` silently,
+  since that's an intentional off state, not a failure.
+- **`backend/telegram_bot.py`'s mail-check logic extracted into
+  `run_mail_check()`** (previously inline in `main()`'s loop) — mirrors
+  `run_periodic_collection()`'s existing shape and, same as that
+  function, is directly unit-testable without needing to drive the
+  infinite main loop. Alerts on every failed cycle, no debouncing —
+  consistent with how collection failures already alert on every
+  failed run, not just repeated ones. `GraphAuthExpiredError` gets a
+  distinct, actionable message; any other exception gets a generic
+  "Mail check failed: {exc}" alert.
+- **`get_access_token(settings, *, interactive: bool = True)`** — new
+  keyword. `check_mail()` now calls it with `interactive=False`: if
+  silent token refresh fails, it returns `None` immediately instead of
+  starting the device-code flow. The interactive path (default,
+  `interactive=True`) is preserved for manual (re-)setup: a small
+  `if __name__ == "__main__":` block was added to `graph_mail.py` so
+  Scott can run `python -m backend.graph_mail` by hand whenever
+  `GraphAuthExpiredError` alerts him to — the same flow used for the
+  original setup in `OE-ADR-037`, just now also reachable on demand
+  instead of only on first run.
+
+### Consequences
+
+- A real crash-loop in either service now reaches Scott via Telegram
+  instead of retrying invisibly forever.
+- Mail-check failures — including the auth-expiry case that used to
+  silently retry a doomed check every 10 minutes — now alert instead of
+  only appearing in `journalctl` logs nobody was watching.
+- The main loop can no longer hang for ~15 minutes on an expired Graph
+  token; worst case is one `GraphAuthExpiredError` alert per
+  `mail_check_interval_minutes` until Scott re-authenticates by hand.
+- Crash-loop alerting adds no new noise for a single non-repeating
+  crash — `Restart=on-failure` still recovers those silently, same as
+  today. Mail-check alerting is different by design: a *single* failed
+  cycle — including a one-off transient network blip, not just a
+  sustained problem — now sends a Telegram alert, matching how
+  collection failures already alert on every failed run rather than
+  only repeated ones. That's a deliberate consistency choice, not
+  accidental noise; if it proves too chatty in practice, debouncing can
+  be added later.

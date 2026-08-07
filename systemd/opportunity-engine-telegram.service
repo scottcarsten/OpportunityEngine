@@ -1,6 +1,9 @@
 [Unit]
 Description=OpportunityEngine Telegram listener, scheduler, and mail monitor
 After=network.target
+StartLimitIntervalSec=600
+StartLimitBurst=5
+OnFailure=opportunity-engine-alert@%n.service
 
 [Service]
 Type=simple

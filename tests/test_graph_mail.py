@@ -3,15 +3,18 @@
 from pathlib import Path
 
 import httpx
+import msal
 import pytest
 
 from backend.config import Settings
 from backend.database import Database
 from backend.graph_mail import (
+    GraphAuthExpiredError,
     check_mail,
     correlate_opportunity,
     fetch_new_messages,
     format_mail_alert,
+    get_access_token,
 )
 from backend.models import OpportunityInput
 from backend.services.constitution_service import load_constitution
@@ -210,7 +213,7 @@ def test_check_mail_end_to_end_correlates_and_formats_alerts(
         graph_delta_link_path=tmp_path / "delta_link.txt",
     )
 
-    monkeypatch.setattr("backend.graph_mail.get_access_token", lambda s: "fake-token")
+    monkeypatch.setattr("backend.graph_mail.get_access_token", lambda s, **kwargs: "fake-token")
     monkeypatch.setattr(
         "backend.graph_mail.fetch_new_messages",
         lambda token, path, **kwargs: [_message()],
@@ -224,7 +227,7 @@ def test_check_mail_end_to_end_correlates_and_formats_alerts(
     assert alerts[0]["subject"] == "Re: Your application"
 
 
-def test_check_mail_returns_empty_list_when_auth_fails(
+def test_check_mail_raises_graph_auth_expired_when_auth_fails(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     database = Database(database_path=tmp_path / "opportunity_engine.db")
@@ -232,8 +235,86 @@ def test_check_mail_returns_empty_list_when_auth_fails(
     constitution = load_constitution(Path("config/constitution.json"))
     settings = Settings(ms_graph_client_id="fake-client-id")
 
-    monkeypatch.setattr("backend.graph_mail.get_access_token", lambda s: None)
+    monkeypatch.setattr("backend.graph_mail.get_access_token", lambda s, **kwargs: None)
 
-    alerts = check_mail(database, constitution, settings)
+    with pytest.raises(GraphAuthExpiredError):
+        check_mail(database, constitution, settings)
 
-    assert alerts == []
+
+def test_check_mail_propagates_http_errors(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    database = Database(database_path=tmp_path / "opportunity_engine.db")
+    database.initialize()
+    constitution = load_constitution(Path("config/constitution.json"))
+    settings = Settings(ms_graph_client_id="fake-client-id")
+
+    monkeypatch.setattr("backend.graph_mail.get_access_token", lambda s, **kwargs: "fake-token")
+
+    def _raise(*args: object, **kwargs: object) -> None:
+        raise httpx.ConnectError("boom")
+
+    monkeypatch.setattr("backend.graph_mail.fetch_new_messages", _raise)
+
+    with pytest.raises(httpx.HTTPError):
+        check_mail(database, constitution, settings)
+
+
+class _FakeMsalApp:
+    """Stands in for msal.PublicClientApplication so get_access_token's
+    interactive-vs-not branching can be tested without real network/auth."""
+
+    def __init__(self, silent_result: dict | None) -> None:
+        self._silent_result = silent_result
+        self.device_flow_called = False
+
+    def get_accounts(self) -> list[dict]:
+        return [{"username": "test@example.com"}]
+
+    def acquire_token_silent(self, scopes: list[str], account: dict) -> dict | None:
+        return self._silent_result
+
+    def initiate_device_flow(self, scopes: list[str]) -> dict:
+        self.device_flow_called = True
+        return {"user_code": "ABC123", "message": "go to https://microsoft.com/link"}
+
+    def acquire_token_by_device_flow(self, flow: dict) -> dict:
+        return {"access_token": "interactive-token"}
+
+
+def test_get_access_token_non_interactive_skips_device_flow_on_silent_failure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    fake_app = _FakeMsalApp(silent_result=None)
+    monkeypatch.setattr(
+        "backend.graph_mail._build_app",
+        lambda settings: (fake_app, msal.SerializableTokenCache()),
+    )
+    settings = Settings(
+        ms_graph_client_id="fake-client-id",
+        graph_token_cache_path=tmp_path / "cache.json",
+    )
+
+    token = get_access_token(settings, interactive=False)
+
+    assert token is None
+    assert fake_app.device_flow_called is False
+
+
+def test_get_access_token_interactive_falls_back_to_device_flow(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    fake_app = _FakeMsalApp(silent_result=None)
+    monkeypatch.setattr(
+        "backend.graph_mail._build_app",
+        lambda settings: (fake_app, msal.SerializableTokenCache()),
+    )
+    settings = Settings(
+        ms_graph_client_id="fake-client-id",
+        graph_token_cache_path=tmp_path / "cache.json",
+    )
+
+    token = get_access_token(settings, interactive=True)
+
+    assert token == "interactive-token"
+    assert fake_app.device_flow_called is True

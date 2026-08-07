@@ -5,11 +5,19 @@ from pathlib import Path
 import pytest
 
 from backend.adapters.base import RawOpportunityRecord
+from backend.config import Settings
 from backend.database import Database
+from backend.db.models import Notification
+from backend.graph_mail import GraphAuthExpiredError
 from backend.models import OpportunityInput
 from backend.services.constitution_service import load_constitution
 from backend.services.opportunity_service import OpportunityService
-from backend.telegram_bot import dispatch_command, handle_update, run_periodic_collection
+from backend.telegram_bot import (
+    dispatch_command,
+    handle_update,
+    run_mail_check,
+    run_periodic_collection,
+)
 
 _CHAT_ID = "12345"
 
@@ -183,6 +191,85 @@ def test_run_periodic_collection_alerts_on_a_failed_adapter(
     assert alert is not None
     assert "failing_source" in alert
     assert "failed" in alert
+
+
+def test_run_mail_check_sends_alert_and_records_notification(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    database, constitution = _setup(tmp_path)
+    settings = Settings(telegram_bot_token="123:abc", telegram_chat_id=_CHAT_ID)
+    sent: list[str] = []
+
+    monkeypatch.setattr(
+        "backend.telegram_bot.check_mail",
+        lambda db, const, s: [
+            {
+                "text": "New email from Jane",
+                "subject": "Re: application",
+                "body": "preview",
+                "opportunity_id": None,
+            }
+        ],
+    )
+    monkeypatch.setattr(
+        "backend.telegram_bot.send_telegram",
+        lambda token, chat_id, text: (sent.append(text), (True, None))[1],
+    )
+
+    run_mail_check(database, constitution, settings)
+
+    assert sent == ["New email from Jane"]
+    with database.session() as session:
+        notifications = session.query(Notification).filter_by(
+            notification_type="employer_reply"
+        ).all()
+    assert len(notifications) == 1
+    assert notifications[0].status == "sent"
+
+
+def test_run_mail_check_alerts_on_graph_auth_expired(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    database, constitution = _setup(tmp_path)
+    settings = Settings(telegram_bot_token="123:abc", telegram_chat_id=_CHAT_ID)
+    sent: list[str] = []
+
+    def _raise(db: object, const: object, s: object) -> list:
+        raise GraphAuthExpiredError()
+
+    monkeypatch.setattr("backend.telegram_bot.check_mail", _raise)
+    monkeypatch.setattr(
+        "backend.telegram_bot.send_telegram",
+        lambda token, chat_id, text: (sent.append(text), (True, None))[1],
+    )
+
+    run_mail_check(database, constitution, settings)
+
+    assert len(sent) == 1
+    assert "python -m backend.graph_mail" in sent[0]
+
+
+def test_run_mail_check_alerts_on_unexpected_failure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    database, constitution = _setup(tmp_path)
+    settings = Settings(telegram_bot_token="123:abc", telegram_chat_id=_CHAT_ID)
+    sent: list[str] = []
+
+    def _raise(db: object, const: object, s: object) -> list:
+        raise RuntimeError("network blip")
+
+    monkeypatch.setattr("backend.telegram_bot.check_mail", _raise)
+    monkeypatch.setattr(
+        "backend.telegram_bot.send_telegram",
+        lambda token, chat_id, text: (sent.append(text), (True, None))[1],
+    )
+
+    run_mail_check(database, constitution, settings)
+
+    assert len(sent) == 1
+    assert "Mail check failed" in sent[0]
+    assert "network blip" in sent[0]
 
 
 def test_unknown_command_returns_usage(tmp_path: Path) -> None:

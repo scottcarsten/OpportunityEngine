@@ -353,10 +353,23 @@ interactive login. Also fixed a real finding from that work: `.env`, the
 Graph token cache, and the Graph delta-link file were group/world
 readable (`chmod 600` now applied) — see `OE-ADR-038`.
 
-**Slice 2 (queued):** operational visibility — alert if the listener
-process itself goes down (not just recover from it), and fix the
-inconsistency where collection failures alert via Telegram but
-mail-check failures currently only log.
+**Slice 2 (done):** operational visibility. Both unit files now set an
+explicit crash-loop threshold (`StartLimitIntervalSec=600`,
+`StartLimitBurst=5`) and `OnFailure=` a new templated oneshot unit
+(`systemd/opportunity-engine-alert@.service`) that alerts Scott via
+Telegram using raw `curl` — deliberately not Python, so it still works
+even if the venv itself is what's broken. Also fixed the
+`OE-ADR-038`-flagged inconsistency: `check_mail()` now raises instead of
+swallowing every failure identically, and `run_mail_check()` (extracted
+from `telegram_bot.py`'s loop, mirroring `run_periodic_collection()`)
+alerts on any failed cycle instead of only logging. Tracing that also
+found a real latent bug — an expired Graph refresh token would've
+blocked the entire listener for up to ~15 minutes waiting on an
+interactive sign-in nothing could complete unattended — fixed by giving
+`get_access_token()` a non-interactive mode the background service
+always uses; Scott re-authenticates by hand with
+`python -m backend.graph_mail` if `GraphAuthExpiredError` ever alerts
+him. See `OE-ADR-039`.
 
 **Slice 3 (queued):** data safety — scheduled backups of the SQLite
 database and the Graph token cache/delta-link state.

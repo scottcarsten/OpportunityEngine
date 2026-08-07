@@ -33,6 +33,13 @@ _SCOPES = ["Mail.Read"]
 _DELTA_URL = "https://graph.microsoft.com/v1.0/me/mailFolders/inbox/messages/delta"
 
 
+class GraphAuthExpiredError(Exception):
+    """Raised when silent token refresh fails and interactive sign-in
+    would be required - which the background service can't do (see
+    OE-ADR-039). Scott needs to re-run `python -m backend.graph_mail`
+    by hand."""
+
+
 def _build_app(settings: Settings) -> tuple[msal.PublicClientApplication, msal.SerializableTokenCache]:
     cache = msal.SerializableTokenCache()
     if settings.graph_token_cache_path.exists():
@@ -51,14 +58,20 @@ def _save_cache(cache: msal.SerializableTokenCache, path: Path) -> None:
         path.write_text(cache.serialize())
 
 
-def get_access_token(settings: Settings) -> str | None:
+def get_access_token(settings: Settings, *, interactive: bool = True) -> str | None:
     """Return a valid Graph access token, refreshing silently when possible.
 
-    Falls back to an interactive device-code flow only when no cached
-    account exists (first run, or a revoked/expired refresh token) -
-    prints a one-time sign-in URL/code for Scott to complete in a
-    browser. Never raises; returns None on any failure so a caller can
-    log and retry next cycle instead of crashing.
+    When `interactive` is True (the default - used for the one-time
+    manual setup/re-auth via `python -m backend.graph_mail`), falls back
+    to an interactive device-code flow when no cached account exists or
+    silent refresh fails: prints a one-time sign-in URL/code for Scott
+    to complete in a browser. When `interactive` is False (used by the
+    background service, OE-ADR-039), that fallback is skipped entirely
+    - there's no terminal attached to complete it, and blocking the
+    listener's main loop for up to ~15 minutes waiting on a sign-in that
+    can't happen would freeze Telegram commands and collection too.
+    Never raises; returns None on any failure so a caller can decide how
+    to handle it.
     """
     app, cache = _build_app(settings)
     try:
@@ -66,7 +79,7 @@ def get_access_token(settings: Settings) -> str | None:
         result = None
         if accounts:
             result = app.acquire_token_silent(_SCOPES, account=accounts[0])
-        if not result:
+        if not result and interactive:
             flow = app.initiate_device_flow(scopes=_SCOPES)
             if "user_code" not in flow:
                 logger.error(
@@ -79,10 +92,13 @@ def get_access_token(settings: Settings) -> str | None:
             result = app.acquire_token_by_device_flow(flow)
         if result and "access_token" in result:
             return result["access_token"]
-        logger.error(
-            "Graph authentication failed: %s",
-            result.get("error_description") if result else "no result",
-        )
+        if not interactive:
+            logger.warning("Graph silent token refresh failed; re-auth required.")
+        else:
+            logger.error(
+                "Graph authentication failed: %s",
+                result.get("error_description") if result else "no result",
+            )
         return None
     finally:
         _save_cache(cache, settings.graph_token_cache_path)
@@ -175,22 +191,21 @@ def check_mail(
     `text` (the alert to send), `subject`, `body` (preview), and
     `opportunity_id` (the best-effort match, or None) - everything a
     caller needs to both send a Telegram alert and record a
-    Notification row. Never raises: auth/network failures are logged
-    and produce an empty list for this cycle rather than crashing the
-    listener.
+    Notification row.
+
+    "Graph not configured" is the one expected, permanent off state -
+    it returns an empty list silently. Every other failure (auth
+    expired, a real network/HTTP error) is a real problem and is raised
+    rather than swallowed, so the caller (OE-ADR-039) can alert Scott
+    instead of this failing invisibly every cycle.
     """
     if not settings.ms_graph_client_id:
         return []
 
-    try:
-        access_token = get_access_token(settings)
-        if access_token is None:
-            logger.warning("Graph auth unavailable this cycle; skipping mail check.")
-            return []
-        messages = fetch_new_messages(access_token, settings.graph_delta_link_path)
-    except httpx.HTTPError as exc:
-        logger.warning("Graph mail check failed: %s", exc)
-        return []
+    access_token = get_access_token(settings, interactive=False)
+    if access_token is None:
+        raise GraphAuthExpiredError()
+    messages = fetch_new_messages(access_token, settings.graph_delta_link_path)
 
     if not messages:
         return []
@@ -214,3 +229,16 @@ def check_mail(
             }
         )
     return alerts
+
+
+if __name__ == "__main__":
+    # One-time (or re-run-when-expired) interactive sign-in, run by hand
+    # in a real terminal - the background service never does this itself
+    # (see get_access_token's `interactive` parameter, OE-ADR-039).
+    from backend.config import get_settings
+
+    token = get_access_token(get_settings(), interactive=True)
+    if token:
+        print("Graph sign-in succeeded; token cache updated.")
+    else:
+        print("Graph sign-in failed - see the log output above.")

@@ -1,0 +1,7 @@
+[Unit]
+Description=Alert Scott via Telegram that %i has given up retrying (OE-ADR-039)
+
+[Service]
+Type=oneshot
+EnvironmentFile=%h/Documents/GitRepository/OpportunityEngine/.env
+ExecStart=/usr/bin/curl -sS -X POST "https://api.telegram.org/bot${OPPORTUNITY_ENGINE_TELEGRAM_BOT_TOKEN}/sendMessage" --data-urlencode "chat_id=${OPPORTUNITY_ENGINE_TELEGRAM_CHAT_ID}" --data-urlencode "text=OpportunityEngine: %i has crashed repeatedly and stopped retrying. Check: journalctl --user -u %i -n 50"
