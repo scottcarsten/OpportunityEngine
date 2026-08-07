@@ -8,9 +8,9 @@ The roadmap is directional rather than a promise of autonomous execution. Any ex
 
 ## Current status
 
-**Project phase:** v0.3 complete  
+**Project phase:** v0.3 complete, v0.4 slice 1 of 3 done  
 **Completed:** all of v0.1 (design baseline through the review inbox), all of v0.2 (application preparation) — master résumé import/versioning, tailored-résumé/cover-letter/fit-report generation, document approval states, and DOCX/PDF export — and all of v0.3 (controlled workflow and notifications) — opportunity aging/expiration, configurable `ntfy` push notifications, follow-up reminders, pipeline reporting, explicit approval receipts, and a design (not yet enabled) for future external integrations  
-**Next milestone:** v0.4 — quality, resilience, and deployment (not yet sliced)
+**Next milestone:** v0.4 — deployment and hardening, in progress: systemd services + secrets permissions done, operational-visibility alerting and DB/token backups queued next
 
 ## Definition of done
 
@@ -339,12 +339,34 @@ an "Expired" filter. See `OE-ADR-028`.
 
 ## v0.4 — Quality, resilience, and deployment
 
-- [ ] Containerize application services.
-- [ ] Add backup, restore, and disaster-recovery procedures.
+Scott chose to keep running everything on this machine rather than move
+to a NAS or cloud VM, and named four hardening angles: process
+resilience, operational visibility, data safety, and security. Sliced
+one at a time, same as every other milestone in this project.
+
+**Slice 1 (done):** the web dashboard and Telegram listener now run as
+user-level systemd services (`systemd/opportunity-engine-web.service`,
+`systemd/opportunity-engine-telegram.service`) instead of being
+hand-started in a terminal — `Restart=on-failure` recovers from a crash,
+`loginctl enable-linger` keeps them running across reboots without an
+interactive login. Also fixed a real finding from that work: `.env`, the
+Graph token cache, and the Graph delta-link file were group/world
+readable (`chmod 600` now applied) — see `OE-ADR-038`.
+
+**Slice 2 (queued):** operational visibility — alert if the listener
+process itself goes down (not just recover from it), and fix the
+inconsistency where collection failures alert via Telegram but
+mail-check failures currently only log.
+
+**Slice 3 (queued):** data safety — scheduled backups of the SQLite
+database and the Graph token cache/delta-link state.
+
 - [ ] Add PostgreSQL migration support if scale requires it.
-- [ ] Add security hardening, dependency scanning, and secret scanning.
+- [ ] Add dependency scanning and secret scanning.
 - [ ] Add performance and reliability tests.
-- [ ] Produce Linux Mint and Docker deployment guides.
+- [ ] Containerize application services / produce a Docker deployment
+      guide (lower priority now that the systemd path covers day-to-day
+      use on this machine).
 
 ## Stretch goals
 

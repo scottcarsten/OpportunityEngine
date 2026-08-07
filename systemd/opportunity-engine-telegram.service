@@ -1,0 +1,14 @@
+[Unit]
+Description=OpportunityEngine Telegram listener, scheduler, and mail monitor
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/Documents/GitRepository/OpportunityEngine
+EnvironmentFile=%h/Documents/GitRepository/OpportunityEngine/.env
+ExecStart=%h/Documents/GitRepository/OpportunityEngine/.venv/bin/python -m backend.telegram_bot
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=default.target

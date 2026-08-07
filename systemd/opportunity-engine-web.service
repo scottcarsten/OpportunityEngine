@@ -1,0 +1,14 @@
+[Unit]
+Description=OpportunityEngine web dashboard
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/Documents/GitRepository/OpportunityEngine
+EnvironmentFile=%h/Documents/GitRepository/OpportunityEngine/.env
+ExecStart=%h/Documents/GitRepository/OpportunityEngine/.venv/bin/uvicorn backend.app:app --host 127.0.0.1 --port 8000
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=default.target

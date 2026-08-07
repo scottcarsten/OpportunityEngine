@@ -2072,3 +2072,94 @@ integration is speculative abstraction, not swappability.
 - The correlation heuristic will sometimes miss or mismatch — by
   design, that's an acceptable cost since it never costs Scott a real
   alert, only occasionally the company name attached to one.
+
+## OE-ADR-038 — Run as systemd services; secrets file-permissions fix
+
+**Status:** Accepted
+**Date:** 2026-08-07
+
+### Context
+
+The web dashboard and the Telegram listener (`OE-ADR-035`/`036`/`037`)
+have been hand-started in a terminal since they were built. That was
+fine during active development, but the listener is now the process
+actually catching employer replies and running the 30-minute collection
+sweep — if the terminal closes, the machine reboots, or the process
+crashes, it silently stops with nobody aware. This opens v0.4
+(deployment/hardening); Scott chose to keep everything on this machine
+rather than move to a NAS or cloud VM, and named process resilience,
+operational visibility, data safety, and security as the angles to
+eventually cover. This slice is the foundation the rest build on — an
+alerting "listener went down" unit and a backup timer both need systemd
+already in place — so it goes first.
+
+Exploration also turned up a real finding unrelated to process
+lifecycle: `.env`, the Graph token cache
+(`data/graph_token_cache.json`), and the Graph delta-link file
+(`data/graph_delta_link.txt`) were all group/world-readable
+(`rw-rw-r--`, a consequence of this account's `umask 0002`) — any other
+login on this machine could read the Telegram bot token, the Graph
+refresh token, and the Anthropic API key. Folded into this slice since
+Scott named security review as one of the four hardening angles and it
+was found while doing the systemd work.
+
+### Decision
+
+- **User-level systemd units, not system-level.** Scott's explicit
+  choice: `~/.config/systemd/user/` units avoid needing `sudo` to
+  install or edit them, at the cost of needing `loginctl enable-linger`
+  (a one-time account setting) so they keep running without an active
+  login session — enabled and verified
+  (`loginctl show-user --property=Linger` → `yes`).
+- **Two units**: `opportunity-engine-web.service`
+  (`uvicorn backend.app:app`) and `opportunity-engine-telegram.service`
+  (`python -m backend.telegram_bot`), tracked in a new `systemd/`
+  directory in the repo — infrastructure-as-code, not secrets, so it's
+  committed rather than living only on this machine.
+- **`EnvironmentFile=.env`** on both units, instead of embedding
+  secrets in the unit file: `.env` is already `KEY=VALUE`, and pointing
+  at it directly means `systemctl --user cat`/`status` never displays
+  secret values, and a rotated token only requires editing `.env` plus
+  a `systemctl --user restart` — no unit-file edit.
+- **`Restart=on-failure`, `RestartSec=10`** is the actual process
+  resilience mechanism: verified live by `kill -9`-ing the listener's
+  PID and confirming systemd restarted it (new PID, restart counter
+  incremented, resumed logging) within the 10-second window.
+- **Secrets/identity file permissions**: `chmod 600` on `.env`,
+  `data/graph_token_cache.json`, `data/graph_delta_link.txt`, and
+  `config/profile.json` (not a credential, but real identity data
+  deserving the same isolation). This fixes the files that exist today;
+  it doesn't change the account's `umask`, so anything newly created
+  by hand (outside the app, which doesn't write these files
+  frequently) will need the same treatment again unless the umask
+  itself is addressed later.
+- **Web-UI authentication is explicitly not part of this slice.** The
+  app is already hard-locked to `127.0.0.1` (a `config.py` validator
+  rejects any other host), so there's no network exposure to add auth
+  against, and Scott confirmed Telegram is his real day-to-day
+  interface — he does not want LAN/phone browser access right now. If
+  that changes later, relaxing the loopback restriction and adding real
+  auth are a coupled change and belong in their own slice, not folded
+  in here.
+
+### Explicitly out of scope for this slice
+
+- Alerting when the listener itself goes down (the crash-restart above
+  handles recovery, not awareness) — queued as a follow-up
+  operational-visibility slice, along with fixing the existing
+  inconsistency where collection failures alert via Telegram but
+  mail-check failures currently only log.
+- Backups for the SQLite database and the Graph token/delta state —
+  queued as a follow-up data-safety slice.
+
+### Consequences
+
+- Both processes now survive terminal closure, process crashes, and
+  full machine reboots without Scott needing to log in and manually
+  restart anything — confirmed live for crash-restart; reboot survival
+  depends on `linger` + `WantedBy=default.target` and should be
+  confirmed with one real reboot.
+- Secrets on disk are no longer readable by any other account on this
+  machine.
+- Two more hardening slices (alerting-on-listener-down, backups) remain
+  queued to fully cover the four angles Scott named for v0.4.

@@ -184,3 +184,26 @@ pytest
 The v0.1 configuration rejects non-loopback bind addresses. OpportunityEngine
 must not be exposed to a LAN or the public internet until authentication and
 deployment controls are explicitly designed and approved.
+
+### Run as a service (recommended for day-to-day use)
+
+The manual commands above are fine for development, but the web dashboard
+and the Telegram listener (`OE-ADR-035`/`036`/`037` — command handling,
+background collection, and employer-reply mail monitoring) are meant to
+run continuously. `systemd/` has two user-level unit files that keep both
+processes running, restart them on crash, and start them on boot without
+needing an interactive login (`OE-ADR-038`):
+
+```bash
+loginctl enable-linger "$USER"   # one-time: lets user services run without you being logged in
+mkdir -p ~/.config/systemd/user
+cp systemd/*.service ~/.config/systemd/user/
+systemctl --user daemon-reload
+systemctl --user enable --now opportunity-engine-web.service opportunity-engine-telegram.service
+```
+
+Check status/logs with `systemctl --user status opportunity-engine-web.service`
+and `journalctl --user -u opportunity-engine-telegram.service -f`. Both
+units read secrets from `.env` via `EnvironmentFile=`, so they never need
+editing when a token rotates — just update `.env` and
+`systemctl --user restart <unit>`.
