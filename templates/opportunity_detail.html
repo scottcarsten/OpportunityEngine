@@ -72,6 +72,13 @@
         <dt class="col-sm-4">Reminds you</dt>
         <dd class="col-sm-8">{{ opportunity.remind_at }}</dd>
         {% endif %}
+        {% if opportunity.applied_at %}
+        <dt class="col-sm-4">Applied</dt>
+        <dd class="col-sm-8">
+          {{ opportunity.applied_at }}
+          <span class="badge text-bg-primary ms-1">Applied</span>
+        </dd>
+        {% endif %}
         <dt class="col-sm-4">Source</dt>
         <dd class="col-sm-8">
           {% if opportunity.source %}
@@ -243,6 +250,31 @@
         <div class="text-secondary">{{ review.created_at }}</div>
       </div>
       {% endfor %}
+      {% endif %}
+    </section>
+    <section class="bg-white border rounded p-4 mt-4">
+      <h2 class="h4">Applied</h2>
+      <p class="small text-secondary">
+        OpportunityEngine never applies on its own &mdash; this just
+        records that you applied elsewhere, so you can gauge volume and
+        real-world responses. Independent of the status above.
+      </p>
+      {% if opportunity.applied_at %}
+      <form method="post" action="/opportunities/{{ opportunity.id }}/unapply">
+        <button type="submit" class="btn btn-sm btn-outline-secondary">
+          Unmark applied
+        </button>
+      </form>
+      {% else %}
+      <form method="post" action="/opportunities/{{ opportunity.id }}/apply" class="d-flex align-items-end gap-2">
+        <div>
+          <label class="form-label small" for="applied-date">
+            Date applied (optional, defaults to today)
+          </label>
+          <input type="date" class="form-control form-control-sm" id="applied-date" name="applied_date">
+        </div>
+        <button type="submit" class="btn btn-sm btn-outline-primary">Mark applied</button>
+      </form>
       {% endif %}
     </section>
     {% macro document_section(opportunity_id, label, route_suffix, docs, can_generate, disabled_reason) %}

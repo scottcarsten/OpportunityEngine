@@ -33,6 +33,7 @@
   ("preparing", "Preparing", "info"),
   ("expired", "Expired", "dark"),
   ("follow_up_due", "Follow-up due", "warning"),
+  ("applied", "Applied", "primary"),
 ] %}
 {% set engagement_chips = [
   ("contract", "Contract"),
@@ -143,6 +144,9 @@
             <span class="badge text-bg-dark">Expired</span>
           {% else %}
             <span class="badge text-bg-warning">Manual review</span>
+          {% endif %}
+          {% if opportunity.applied_at %}
+            <span class="badge text-bg-primary ms-1">Applied</span>
           {% endif %}
         </td>
         <td class="text-end">

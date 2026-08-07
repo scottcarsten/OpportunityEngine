@@ -1702,3 +1702,66 @@ specific board's actual capabilities are known, not decided here.
   pressure.
 - v0.3 is now complete: all six roadmap items are shipped or
   (deliberately, for this one) designed without being enabled.
+
+---
+
+## OE-ADR-034 — Tracking applied opportunities, independent of lifecycle_status
+
+**Status:** Accepted
+**Date:** 2026-08-06
+
+### Context
+
+Scott floated this mid-session, separate from the v0.3 checklist: a way
+to mark opportunities he's actually applied to (always outside the app —
+it never auto-applies), see the date, and gauge real-world
+volume/response rates against what the tool surfaces. Asked directly,
+Scott chose two things: marking something applied should **not** change
+its current status (it should get its own dashboard filter chip
+instead, the same pattern `follow_up_due` established in `OE-ADR-030`),
+and this slice should stop at applied-date/volume tracking — no
+outcome/response taxonomy (interview/offer/rejected) yet.
+
+### Decision
+
+- New `opportunities.applied_at` (nullable `TEXT`, migration `0005`,
+  identical shape to `0004`'s `remind_at`) plus an index. Deliberately
+  **not** the schema's existing unused `'closed'` lifecycle value —
+  `OE-ADR-028`'s consequences section had speculated `'closed'` might be
+  the right fit for this, but confirming the actual requirement
+  directly showed an independent flag serves it better: Scott wants to
+  keep seeing an opportunity's real pipeline stage (shortlisted,
+  preparing, etc.) even after applying, not lose that context to a
+  terminal status.
+- `OpportunityService.mark_applied(opportunity_id, applied_at=None)` /
+  `unmark_applied(opportunity_id)`: set/clear `applied_at` only —
+  **never touch `lifecycle_status`**. `applied_at` defaults to now but
+  accepts a backdated ISO value, since Scott may apply on a Saturday and
+  mark it in the tool on Monday. Both audited
+  (`opportunity_applied`/`opportunity_applied_undone`). Re-marking just
+  overwrites the date — no special case needed to "correct a mistake."
+- New `backend/timeutil.py` helper `parse_date_iso()` parses a plain
+  `YYYY-MM-DD` (an HTML `<input type="date">`'s format) to our ISO
+  format at midnight UTC — same "external format → our ISO string"
+  shape as `parse_rfc822`/`from_unix_timestamp`.
+- `list_opportunities`'s `lifecycle_status` parameter gained a second
+  special value, `"applied"` (alongside `follow_up_due`), translated to
+  `applied_at IS NOT NULL` instead of an exact-match filter — exercises
+  the same pattern `OE-ADR-030` already established for a pseudo-status
+  dashboard filter.
+- Dashboard: new "Applied" filter chip, plus a small "Applied" badge
+  layered next to the existing lifecycle badge in the opportunity table
+  (no new column, since the two are independent). Detail page shows the
+  applied date and a mark/unmark form in its own section, separate from
+  "Review decision" — applying isn't a judgment about the opportunity's
+  fit, it's a factual record of something that happened outside the app.
+
+### Consequences
+
+- Scott can now answer "how many have I actually applied to, and when"
+  without losing visibility into each one's review-pipeline stage.
+- Outcome/response tracking (interview scheduled, rejected, ghosted)
+  remains explicitly deferred — a bigger, separate feature if wanted
+  later, not silently bundled in here.
+- Pipeline reporting (`OE-ADR-031`) could show applied-volume-over-time
+  later; not added in this slice since it wasn't asked for.

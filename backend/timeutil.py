@@ -42,3 +42,15 @@ def from_unix_timestamp(value: int | float | None) -> str | None:
     except (TypeError, ValueError, OSError):
         return None
     return _to_iso(parsed)
+
+
+def parse_date_iso(value: str | None) -> str | None:
+    """Parse a plain 'YYYY-MM-DD' date (e.g. an HTML date input) to our
+    ISO format, at midnight UTC. Returns None on missing/invalid input."""
+    if not value:
+        return None
+    try:
+        parsed = datetime.strptime(value, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+    except ValueError:
+        return None
+    return _to_iso(parsed)

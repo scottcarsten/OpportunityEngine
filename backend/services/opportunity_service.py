@@ -317,6 +317,58 @@ class OpportunityService:
                 session.rollback()
                 raise
 
+    def mark_applied(self, opportunity_id: int, applied_at: str | None = None) -> None:
+        """Record that Scott applied to this opportunity (outside the app).
+
+        Independent of `lifecycle_status` (OE-ADR-034) - applying doesn't
+        move an opportunity out of `shortlisted`/`preparing`/whatever it
+        currently is. `applied_at` defaults to now if not supplied;
+        calling this again just overwrites the date.
+        """
+        with self.database.session() as session:
+            opportunity = session.execute(
+                select(Opportunity).where(Opportunity.id == opportunity_id)
+            ).scalar_one_or_none()
+            if opportunity is None:
+                raise ValueError(f"opportunity not found: {opportunity_id}")
+
+            opportunity.applied_at = applied_at or now_iso()
+            opportunity.updated_at = now_iso()
+            AuditService(session).record(
+                AuditEvent(
+                    event_type="opportunity_applied",
+                    actor_type="scott",
+                    entity_type="opportunity",
+                    entity_id=opportunity_id,
+                    constitution_version=self.constitution.version,
+                    summary=f"Marked applied as of {opportunity.applied_at}.",
+                )
+            )
+            session.commit()
+
+    def unmark_applied(self, opportunity_id: int) -> None:
+        """Clear a previously recorded applied date."""
+        with self.database.session() as session:
+            opportunity = session.execute(
+                select(Opportunity).where(Opportunity.id == opportunity_id)
+            ).scalar_one_or_none()
+            if opportunity is None:
+                raise ValueError(f"opportunity not found: {opportunity_id}")
+
+            opportunity.applied_at = None
+            opportunity.updated_at = now_iso()
+            AuditService(session).record(
+                AuditEvent(
+                    event_type="opportunity_applied_undone",
+                    actor_type="scott",
+                    entity_type="opportunity",
+                    entity_id=opportunity_id,
+                    constitution_version=self.constitution.version,
+                    summary="Cleared applied date.",
+                )
+            )
+            session.commit()
+
     def mark_notifications_sent(self, opportunity_id: int) -> None:
         """Mark this opportunity's queued notifications as sent (viewed)."""
         with self.database.session() as session:
@@ -468,6 +520,7 @@ class OpportunityService:
             Opportunity.lifecycle_status,
             Opportunity.created_at,
             Opportunity.remind_at,
+            Opportunity.applied_at,
         ).order_by(Opportunity.created_at.desc(), Opportunity.id.desc())
         if lifecycle_status == "follow_up_due":
             # Not a real lifecycle_status - a deferred opportunity whose
@@ -477,6 +530,11 @@ class OpportunityService:
                 Opportunity.remind_at.is_not(None),
                 Opportunity.remind_at <= now_iso(),
             )
+        elif lifecycle_status == "applied":
+            # Not a real lifecycle_status either - independent of it by
+            # design, so applying doesn't hide an opportunity's actual
+            # stage (OE-ADR-034).
+            query = query.where(Opportunity.applied_at.is_not(None))
         elif lifecycle_status is not None:
             query = query.where(Opportunity.lifecycle_status == lifecycle_status)
         if engagement_type is not None:

@@ -30,6 +30,7 @@ from backend.services.document_service import DocumentService
 from backend.services.opportunity_service import OpportunityService
 from backend.services.resume_service import ResumeService
 from backend.services.scoring_service import ScoringService
+from backend.timeutil import parse_date_iso
 
 
 router = APIRouter()
@@ -235,6 +236,34 @@ async def review_opportunity(request: Request, opportunity_id: int) -> RedirectR
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
+    return RedirectResponse(url=f"/opportunities/{opportunity_id}", status_code=303)
+
+
+@router.post("/opportunities/{opportunity_id}/apply")
+async def apply_to_opportunity(request: Request, opportunity_id: int) -> RedirectResponse:
+    service = _service(request)
+    if service.get_opportunity(opportunity_id) is None:
+        raise HTTPException(status_code=404, detail="opportunity not found")
+
+    form = await request.form()
+    applied_date = str(form.get("applied_date", "")).strip()
+    applied_at = None
+    if applied_date:
+        applied_at = parse_date_iso(applied_date)
+        if applied_at is None:
+            raise HTTPException(status_code=422, detail=f"invalid applied_date: {applied_date}")
+
+    service.mark_applied(opportunity_id, applied_at=applied_at)
+    return RedirectResponse(url=f"/opportunities/{opportunity_id}", status_code=303)
+
+
+@router.post("/opportunities/{opportunity_id}/unapply")
+def unapply_from_opportunity(request: Request, opportunity_id: int) -> RedirectResponse:
+    service = _service(request)
+    if service.get_opportunity(opportunity_id) is None:
+        raise HTTPException(status_code=404, detail="opportunity not found")
+
+    service.unmark_applied(opportunity_id)
     return RedirectResponse(url=f"/opportunities/{opportunity_id}", status_code=303)
 
 

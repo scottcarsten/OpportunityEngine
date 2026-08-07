@@ -283,6 +283,16 @@ none of the four current sources are known to expose one, so that may
 end up as a smaller UX feature instead of a full API integration. v0.3
 is now complete.
 
+**Bonus slice, outside the v0.3 checklist:** tracking applied
+opportunities. Scott floated this mid-session — mark an opportunity as
+applied (always outside the app, which never auto-applies), see the
+date, gauge real-world volume/response rates. Independent of
+`lifecycle_status` by his own choice, so applying doesn't hide what
+stage an opportunity was at in the review pipeline; gets its own
+dashboard "Applied" filter chip, same pattern `follow_up_due`
+established. No outcome/response tracking yet — deliberately scoped to
+just applied-date/volume. See `OE-ADR-034`.
+
 Opportunity aging and stale-listing detection is v0.3's first slice.
 Digging into the schema before building anything found `expires_at`,
 `last_seen_at`, and the `expired`/`closed` lifecycle states already
