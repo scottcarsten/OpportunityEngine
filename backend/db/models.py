@@ -516,7 +516,7 @@ class Notification(Base):
 
     __table_args__ = (
         CheckConstraint(
-            "channel IN ('local', 'dashboard', 'email', 'sms', 'ntfy', 'other')",
+            "channel IN ('local', 'dashboard', 'email', 'sms', 'ntfy', 'telegram', 'other')",
             name="ck_notifications_channel",
         ),
         CheckConstraint(

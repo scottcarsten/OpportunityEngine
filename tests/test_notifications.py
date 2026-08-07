@@ -1,4 +1,4 @@
-"""Tests for the ntfy push-notification channel (OE-ADR-029)."""
+"""Tests for the Telegram push-notification channel (OE-ADR-035)."""
 
 from pathlib import Path
 
@@ -10,7 +10,7 @@ from backend.config import Settings
 from backend.database import Database
 from backend.db.models import Notification
 from backend.models import OpportunityInput
-from backend.notifications import send_ntfy
+from backend.notifications import send_telegram
 from backend.services.constitution_service import load_constitution
 from backend.services.opportunity_service import OpportunityService
 
@@ -38,51 +38,52 @@ def _opportunity(**overrides: object) -> OpportunityInput:
     return OpportunityInput(**values)
 
 
-def _service(tmp_path: Path, *, ntfy_topic: str | None) -> OpportunityService:
+def _service(tmp_path: Path, *, telegram_bot_token: str | None) -> OpportunityService:
     database = Database(database_path=tmp_path / "opportunity_engine.db")
     database.initialize()
     constitution = load_constitution(Path("config/constitution.json"))
-    settings = Settings(ntfy_topic=ntfy_topic, ntfy_server="https://ntfy.sh")
+    settings = Settings(telegram_bot_token=telegram_bot_token, telegram_chat_id="12345")
     return OpportunityService(database, constitution, settings)
 
 
-def test_send_ntfy_success() -> None:
+def test_send_telegram_success() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
-        assert request.url == "https://ntfy.sh/my-topic"
-        assert request.content == b"Subject\n\nBody text"
+        assert request.url == "https://api.telegram.org/bot123:abc/sendMessage"
         return httpx.Response(200)
 
     client = httpx.Client(transport=httpx.MockTransport(handler))
-    sent, error = send_ntfy("https://ntfy.sh", "my-topic", "Subject", "Body text", client=client)
+    sent, error = send_telegram("123:abc", "12345", "Hello", client=client)
 
     assert sent is True
     assert error is None
 
 
-def test_send_ntfy_http_error_status() -> None:
+def test_send_telegram_http_error_status() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(500)
 
     client = httpx.Client(transport=httpx.MockTransport(handler))
-    sent, error = send_ntfy("https://ntfy.sh", "my-topic", "Subject", "Body", client=client)
+    sent, error = send_telegram("123:abc", "12345", "Hello", client=client)
 
     assert sent is False
     assert error is not None
 
 
-def test_send_ntfy_connection_error() -> None:
+def test_send_telegram_connection_error() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         raise httpx.ConnectError("connection refused")
 
     client = httpx.Client(transport=httpx.MockTransport(handler))
-    sent, error = send_ntfy("https://ntfy.sh", "my-topic", "Subject", "Body", client=client)
+    sent, error = send_telegram("123:abc", "12345", "Hello", client=client)
 
     assert sent is False
     assert "connection refused" in error
 
 
-def test_ingest_without_ntfy_topic_creates_only_dashboard_notification(tmp_path: Path) -> None:
-    service = _service(tmp_path, ntfy_topic=None)
+def test_ingest_without_telegram_token_creates_only_dashboard_notification(
+    tmp_path: Path,
+) -> None:
+    service = _service(tmp_path, telegram_bot_token=None)
     opportunity_id, _ = service.create_manual(_opportunity())
 
     with service.database.session() as session:
@@ -93,20 +94,20 @@ def test_ingest_without_ntfy_topic_creates_only_dashboard_notification(tmp_path:
     assert [n.channel for n in notifications] == ["dashboard"]
 
 
-def test_ingest_with_ntfy_topic_sends_and_records_both_channels(
+def test_ingest_with_telegram_configured_sends_and_records_both_channels(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    calls: list[tuple[str, str, str, str]] = []
+    calls: list[tuple[str, str, str]] = []
 
-    def fake_send_ntfy(server: str, topic: str, subject: str, body: str) -> tuple[bool, str | None]:
-        calls.append((server, topic, subject, body))
+    def fake_send_telegram(bot_token: str, chat_id: str, text: str) -> tuple[bool, str | None]:
+        calls.append((bot_token, chat_id, text))
         return True, None
 
     monkeypatch.setattr(
-        "backend.services.opportunity_service.send_ntfy", fake_send_ntfy
+        "backend.services.opportunity_service.send_telegram", fake_send_telegram
     )
 
-    service = _service(tmp_path, ntfy_topic="my-topic")
+    service = _service(tmp_path, telegram_bot_token="123:abc")
     opportunity_id, _ = service.create_manual(_opportunity())
 
     with service.database.session() as session:
@@ -115,26 +116,26 @@ def test_ingest_with_ntfy_topic_sends_and_records_both_channels(
         ).scalars().all()
 
     channels = {n.channel: n for n in notifications}
-    assert set(channels) == {"dashboard", "ntfy"}
-    assert channels["ntfy"].status == "sent"
-    assert channels["ntfy"].sent_at is not None
-    assert channels["ntfy"].is_external == 0
+    assert set(channels) == {"dashboard", "telegram"}
+    assert channels["telegram"].status == "sent"
+    assert channels["telegram"].sent_at is not None
+    assert channels["telegram"].is_external == 0
     assert len(calls) == 1
-    assert calls[0][0] == "https://ntfy.sh"
-    assert calls[0][1] == "my-topic"
+    assert calls[0][0] == "123:abc"
+    assert calls[0][1] == "12345"
 
 
-def test_ingest_records_failed_ntfy_delivery_without_blocking_ingest(
+def test_ingest_records_failed_telegram_delivery_without_blocking_ingest(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    def fake_send_ntfy(server: str, topic: str, subject: str, body: str) -> tuple[bool, str | None]:
+    def fake_send_telegram(bot_token: str, chat_id: str, text: str) -> tuple[bool, str | None]:
         return False, "boom"
 
     monkeypatch.setattr(
-        "backend.services.opportunity_service.send_ntfy", fake_send_ntfy
+        "backend.services.opportunity_service.send_telegram", fake_send_telegram
     )
 
-    service = _service(tmp_path, ntfy_topic="my-topic")
+    service = _service(tmp_path, telegram_bot_token="123:abc")
     opportunity_id, created = service.create_manual(_opportunity())
 
     assert created is True
@@ -144,6 +145,6 @@ def test_ingest_records_failed_ntfy_delivery_without_blocking_ingest(
         ).scalars().all()
 
     channels = {n.channel: n for n in notifications}
-    assert channels["ntfy"].status == "failed"
-    assert channels["ntfy"].error_summary == "boom"
-    assert channels["ntfy"].sent_at is None
+    assert channels["telegram"].status == "failed"
+    assert channels["telegram"].error_summary == "boom"
+    assert channels["telegram"].sent_at is None

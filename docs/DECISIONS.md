@@ -1765,3 +1765,147 @@ outcome/response taxonomy (interview/offer/rejected) yet.
   later, not silently bundled in here.
 - Pipeline reporting (`OE-ADR-031`) could show applied-volume-over-time
   later; not added in this slice since it wasn't asked for.
+
+---
+
+## OE-ADR-035 — Telegram replaces ntfy; a command listener for /status /pending /new /newsearch
+
+**Status:** Accepted
+**Date:** 2026-08-07
+
+### Context
+
+Live testing `OE-ADR-029`'s `ntfy` channel surfaced a real, reproducible
+failure: local self-tests on the iOS app worked, but every externally
+published message — confirmed delivered and stored on ntfy.sh's server,
+visible live via a browser SSE connection — never reached the phone
+through the app itself, even after removing and re-adding the
+subscription and confirming iOS notification permissions were fully
+correct. This wasn't a guess or a one-off; it was isolated methodically
+(server confirmed working via direct polling and a browser view; app
+confirmed receiving nothing) before concluding the free public ntfy.sh
+iOS push pipeline itself was the point of failure, not this project's
+code. Scott set up a Telegram bot instead and confirmed real two-way
+delivery live in the same session.
+
+Separately, Scott asked for a way to check the pipeline's state and
+trigger a fresh collection from his phone without needing the laptop —
+`/status`, `/pending`, `/new`, `/newsearch`. That requires something
+that runs continuously rather than only on demand, which is also the
+same foundational piece flagged as necessary before any future
+Gmail-response-monitoring work: nothing in this project ran on its own
+before this slice.
+
+### Decision
+
+- `backend/notifications.py`'s `send_ntfy` is replaced by
+  `send_telegram(bot_token, chat_id, text)` — same never-raise,
+  `(bool, str | None)` contract, same injectable-`client` testing
+  pattern. `Settings.ntfy_topic`/`ntfy_server` are replaced by
+  `telegram_bot_token`/`telegram_chat_id`. The `notifications.channel`
+  CHECK constraint (migration `0006`, same batch-recreate-plus-trigger
+  shape as `0003`) adds `'telegram'`; `'ntfy'` stays in the enum as a
+  harmless historical value rather than churning the schema further to
+  remove it.
+- Both existing notification call sites
+  (`OpportunityService._ingest`, `surface_due_reminders`) swap to
+  `telegram`, unchanged in every other respect — still `is_external=0`
+  (self-notification, `OE-ADR-029`'s reasoning applies to any channel),
+  still never blocks ingest on a delivery failure.
+- New `backend/telegram_bot.py`, run manually with `python -m
+  backend.telegram_bot` and left running in a terminal on an always-on
+  machine — not an auto-starting systemd service, matching Scott's own
+  choice and `OE-ADR-010`'s existing deferral of that. Long-polls
+  Telegram's `getUpdates` (native `timeout` param, not a tight loop).
+- **Security is structural, not configurable**: any message from a chat
+  ID other than `settings.telegram_chat_id` is silently ignored — no
+  reply at all, so a stranger who somehow messages the bot doesn't even
+  learn it responds to anything. The allowed chat ID is never taken
+  from the incoming message itself.
+- Four commands, all reusing existing services rather than new
+  aggregation logic: `/status` (via `ReportingService.build_report()`),
+  `/pending` (opportunities in `new` or `eligible`, mirroring
+  `count_pending_review`'s definition), `/new` (scoped to just `new` —
+  filter evaluation was inconclusive, distinct from `eligible`'s
+  cleanly-passed meaning), and `/newsearch` (the only command with a
+  side effect — runs a real collection across every configured adapter
+  via the newly-extracted `backend/jobs.py:run_collection`, sends an
+  immediate "starting..." acknowledgment since it can take 10-30+
+  seconds, then a summary). Any other `/command` gets a short usage
+  reply; non-command text is silently ignored — this is a scripted
+  command dispatcher, not an AI chatbot, deliberately.
+- `backend/jobs.py` extracts the collect-then-sweep sequence
+  (`run_collection`) that `backend/cli.py` already had inline, so both
+  the CLI and `/newsearch` share one implementation instead of two
+  copies drifting apart.
+
+### Consequences
+
+- Notifications now actually reach Scott's phone, which `ntfy` failed
+  to do despite passing every check except the one that mattered.
+- The listener is single-threaded — a `/newsearch` in progress blocks
+  the next command until it finishes. Acceptable at personal,
+  single-user scale; would need real concurrency handling if that ever
+  changed.
+- This listener is the first genuinely continuous background process in
+  the project. It does **not** yet run the three expiration/reminder/
+  approval sweeps on its own timer (only via `/newsearch` or the CLI) —
+  deliberately deferred rather than bundled in here, though it's a
+  natural place to add that later, and the same place Gmail-response
+  polling would eventually live.
+- `configure_logging` (`backend/logging_config.py`) gained an optional
+  `log_file` parameter — a `TimedRotatingFileHandler` (stdlib, rotates
+  daily, `backupCount=7`, so it never grows unbounded) alongside the
+  existing stdout handler, reusing the same `JsonFormatter`. Wired into
+  the listener at `data/logs/telegram_bot.log`, since nobody's watching
+  a terminal for an unattended process. Per-update handling is now also
+  wrapped so one bad update (a transient network error, an unexpected
+  exception) gets logged and skipped rather than killing the whole
+  listener — a background process that dies silently on the first
+  hiccup isn't meaningfully "always on."
+- `configure_logging` must be called **after** `Database.initialize()`,
+  not before, and now defensively re-enables every existing logger
+  itself — see the bug below for why both are load-bearing, not
+  stylistic.
+
+### Real bug found and fixed during this slice
+
+Live-testing surfaced a genuine, previously-dormant test-isolation gap:
+any test constructing `Settings()`/`OpportunityService(database,
+constitution)` without explicit overrides silently read the **real**
+`.env` file — including, once configured, the real Telegram bot token —
+via two independent paths: pydantic-settings' own `env_file` reading,
+and `backend.app.create_app()`'s module-level `load_dotenv()` call
+(which mutates real `os.environ`, persisting for the rest of the pytest
+process once *any* test touches `create_app()` — and `backend/app.py`
+has a *module-level* `app = create_app()` line, so this could fire
+during test collection, before any fixture ever runs). This wasn't
+theoretical: reproduced directly, it caused `test_review.py`'s
+`test_mark_notifications_sent_flips_status_and_count` to fail with
+`MultipleResultsFound` because a real Telegram send created an
+unexpected second `Notification` row — and separately, an ad hoc
+debug script (run outside pytest, so unaffected by the eventual fix)
+sent a real message as a side effect of tracking this down. Fixed with
+`tests/conftest.py`'s `pytest_configure` hook — the one point early
+enough to run before collection imports `backend.app` — which disables
+both `env_file` reading and `load_dotenv()` for the whole test session.
+
+A second, unrelated real bug turned up live-testing the listener itself:
+`logger.info("Telegram listener started.")` silently produced nothing —
+no stdout, no file, no error — despite the handlers being visibly
+correct. Root cause: `database/migrations/env.py` calls
+`logging.config.fileConfig(config.config_file_name)` to configure
+Alembic's own logging from `alembic.ini`, and `fileConfig`'s default
+`disable_existing_loggers=True` silently disables *every* logger that
+already exists at that point — including
+`logging.getLogger(__name__)`, created the moment `backend/
+telegram_bot.py` is imported, well before `main()` ever runs. A disabled
+logger drops every record with no error raised, which is what made this
+so hard to isolate — confirmed directly by printing `logger.disabled`
+(`True`) after `database.initialize()`. Fixed two ways together:
+`configure_logging()` is now called *after* `database.initialize()`
+(so Alembic's `fileConfig()` can't clobber it afterward), and
+`configure_logging()` itself now walks `logging.root.manager.loggerDict`
+re-enabling everything, so it leaves logging in a genuinely known-good
+state regardless of what ran before it — a real property to hold given
+it exists specifically to give unattended processes a place to look.

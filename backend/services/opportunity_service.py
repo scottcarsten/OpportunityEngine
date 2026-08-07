@@ -29,7 +29,7 @@ from backend.db.models import (
     SourceRecord,
 )
 from backend.models import OpportunityInput
-from backend.notifications import send_ntfy
+from backend.notifications import send_telegram
 from backend.services.audit_service import AuditEvent, AuditService
 from backend.services.constitution_service import Constitution
 from backend.timeutil import add_days_iso, now_iso
@@ -174,18 +174,20 @@ class OpportunityService:
                         body=body,
                     )
                 )
-                if self.settings.ntfy_topic:
+                if self.settings.telegram_bot_token and self.settings.telegram_chat_id:
                     # Self-notification, not an external contact (OE-ADR-029),
                     # so is_external stays 0 - a delivery failure here must
                     # never roll back an otherwise-successful ingest.
-                    sent, error = send_ntfy(
-                        self.settings.ntfy_server, self.settings.ntfy_topic, subject, body
+                    sent, error = send_telegram(
+                        self.settings.telegram_bot_token,
+                        self.settings.telegram_chat_id,
+                        f"{subject}\n\n{body}",
                     )
                     session.add(
                         Notification(
                             opportunity_id=opportunity_row.id,
                             notification_type="opportunity_needs_review",
-                            channel="ntfy",
+                            channel="telegram",
                             status="sent" if sent else "failed",
                             subject=subject,
                             body=body,
@@ -455,15 +457,17 @@ class OpportunityService:
                         body=body,
                     )
                 )
-                if self.settings.ntfy_topic:
-                    sent, error = send_ntfy(
-                        self.settings.ntfy_server, self.settings.ntfy_topic, subject, body
+                if self.settings.telegram_bot_token and self.settings.telegram_chat_id:
+                    sent, error = send_telegram(
+                        self.settings.telegram_bot_token,
+                        self.settings.telegram_chat_id,
+                        f"{subject}\n\n{body}",
                     )
                     session.add(
                         Notification(
                             opportunity_id=opportunity.id,
                             notification_type="follow_up_reminder",
-                            channel="ntfy",
+                            channel="telegram",
                             status="sent" if sent else "failed",
                             subject=subject,
                             body=body,

@@ -16,11 +16,13 @@ from backend.services.constitution_service import load_constitution
 from backend.services.opportunity_service import OpportunityService
 
 
-def _service(tmp_path: Path, *, ntfy_topic: str | None = None) -> tuple[OpportunityService, Database]:
+def _service(
+    tmp_path: Path, *, telegram_bot_token: str | None = None
+) -> tuple[OpportunityService, Database]:
     database = Database(database_path=tmp_path / "opportunity_engine.db")
     database.initialize()
     constitution = load_constitution(Path("config/constitution.json"))
-    settings = Settings(ntfy_topic=ntfy_topic, ntfy_server="https://ntfy.sh")
+    settings = Settings(telegram_bot_token=telegram_bot_token, telegram_chat_id="12345")
     return OpportunityService(database, constitution, settings), database
 
 
@@ -146,20 +148,20 @@ def test_surface_due_reminders_ignores_non_deferred_opportunities(tmp_path: Path
     assert due_ids == []
 
 
-def test_surface_due_reminders_sends_ntfy_when_configured(
+def test_surface_due_reminders_sends_telegram_when_configured(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    calls: list[tuple[str, str]] = []
+    calls: list[str] = []
 
-    def fake_send_ntfy(server: str, topic: str, subject: str, body: str) -> tuple[bool, str | None]:
-        calls.append((subject, body))
+    def fake_send_telegram(bot_token: str, chat_id: str, text: str) -> tuple[bool, str | None]:
+        calls.append(text)
         return True, None
 
     monkeypatch.setattr(
-        "backend.services.opportunity_service.send_ntfy", fake_send_ntfy
+        "backend.services.opportunity_service.send_telegram", fake_send_telegram
     )
 
-    service, database = _service(tmp_path, ntfy_topic="my-topic")
+    service, database = _service(tmp_path, telegram_bot_token="123:abc")
     opportunity_id, _ = service.create_manual(_opportunity())
     service.record_review_decision(opportunity_id, "defer", remind_days=7)
     with database.session() as session:
@@ -179,10 +181,10 @@ def test_surface_due_reminders_sends_ntfy_when_configured(
                 Notification.notification_type == "follow_up_reminder",
             )
         ).scalars().all()
-    assert {n.channel for n in notifications} == {"dashboard", "ntfy"}
-    # One ntfy call from ingest (eligible opportunity) plus one from the
+    assert {n.channel for n in notifications} == {"dashboard", "telegram"}
+    # One telegram call from ingest (eligible opportunity) plus one from the
     # reminder sweep - assert the reminder's own call happened.
-    assert any(subject.startswith("Follow-up:") for subject, _ in calls)
+    assert any(text.startswith("Follow-up:") for text in calls)
 
 
 @pytest.fixture

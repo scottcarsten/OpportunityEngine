@@ -13,10 +13,8 @@ from backend.adapters.remotive import RemotiveAdapter
 from backend.adapters.we_work_remotely import WeWorkRemotelyAdapter
 from backend.config import get_settings
 from backend.database import Database
-from backend.services.approval_service import ApprovalService
-from backend.services.collection_service import CollectionService
+from backend.jobs import run_collection
 from backend.services.constitution_service import load_constitution
-from backend.services.opportunity_service import OpportunityService
 
 ADAPTERS = {
     "we_work_remotely": WeWorkRemotelyAdapter,
@@ -41,24 +39,7 @@ def main(argv: list[str] | None = None) -> int:
     database.initialize()
     try:
         adapter = ADAPTERS[args.source]()
-        service = CollectionService(database, constitution)
-        result = service.run(adapter)
-        # Runs after every collection, not just this source's — expiration
-        # only depends on expires_at having passed, not on which source was
-        # just refreshed, so it's always safe to sweep table-wide (OE-ADR-028).
-        opportunity_service = OpportunityService(database, constitution)
-        expired_ids = opportunity_service.expire_stale_opportunities()
-        result["expired_count"] = len(expired_ids)
-        # Same table-wide, collection-triggered pattern as expiration above -
-        # a due reminder doesn't depend on which source was just refreshed
-        # (OE-ADR-030).
-        reminder_ids = opportunity_service.surface_due_reminders()
-        result["reminders_sent"] = len(reminder_ids)
-        # Same table-wide, collection-triggered pattern as the two sweeps
-        # above - a stale pending approval doesn't depend on which source
-        # was just refreshed (OE-ADR-032).
-        expired_approval_ids = ApprovalService(database, constitution).expire_stale_requests()
-        result["expired_approvals_count"] = len(expired_approval_ids)
+        result = run_collection(database, constitution, adapter)
     finally:
         database.close()
 

@@ -293,6 +293,18 @@ dashboard "Applied" filter chip, same pattern `follow_up_due`
 established. No outcome/response tracking yet — deliberately scoped to
 just applied-date/volume. See `OE-ADR-034`.
 
+**Bonus slice**: Telegram replaces `ntfy` as the push channel, after
+live testing proved `ntfy`'s free public server unreliable for iOS
+remote push (confirmed via server-side polling and a browser view —
+messages landed everywhere except the phone app itself). A new
+manually-started listener (`python -m backend.telegram_bot`) answers
+`/status`, `/pending`, `/new` (read-only reports) and `/newsearch`
+(triggers a real collection run across every source), hard-locked to
+Scott's own chat ID. This is also the project's first continuous
+background process — a real step toward the future Gmail-response
+monitoring idea, which needs the same kind of always-running piece. See
+`OE-ADR-035`.
+
 Opportunity aging and stale-listing detection is v0.3's first slice.
 Digging into the schema before building anything found `expires_at`,
 `last_seen_at`, and the `expired`/`closed` lifecycle states already
