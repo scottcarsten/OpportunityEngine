@@ -227,6 +227,67 @@ def test_run_mail_check_sends_alert_and_records_notification(
     assert notifications[0].status == "sent"
 
 
+def test_run_mail_check_auto_sets_responded_on_match_when_unset(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    database, constitution = _setup(tmp_path)
+    service = OpportunityService(database, constitution)
+    opportunity_id, _ = service.create_manual(_opportunity())
+    service.mark_applied(opportunity_id)
+    settings = Settings(telegram_bot_token="123:abc", telegram_chat_id=_CHAT_ID)
+
+    monkeypatch.setattr(
+        "backend.telegram_bot.check_mail",
+        lambda db, const, s: [
+            {
+                "text": "New email from Jane",
+                "subject": "Re: application",
+                "body": "preview",
+                "opportunity_id": opportunity_id,
+            }
+        ],
+    )
+    monkeypatch.setattr(
+        "backend.telegram_bot.send_telegram", lambda token, chat_id, text: (True, None)
+    )
+
+    run_mail_check(database, constitution, settings)
+
+    opportunity = service.get_opportunity(opportunity_id)
+    assert opportunity["response_status"] == "responded"
+
+
+def test_run_mail_check_never_overwrites_a_more_specific_response_status(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    database, constitution = _setup(tmp_path)
+    service = OpportunityService(database, constitution)
+    opportunity_id, _ = service.create_manual(_opportunity())
+    service.mark_applied(opportunity_id)
+    service.set_response_status(opportunity_id, "interview")
+    settings = Settings(telegram_bot_token="123:abc", telegram_chat_id=_CHAT_ID)
+
+    monkeypatch.setattr(
+        "backend.telegram_bot.check_mail",
+        lambda db, const, s: [
+            {
+                "text": "New email from Jane",
+                "subject": "Re: application",
+                "body": "preview",
+                "opportunity_id": opportunity_id,
+            }
+        ],
+    )
+    monkeypatch.setattr(
+        "backend.telegram_bot.send_telegram", lambda token, chat_id, text: (True, None)
+    )
+
+    run_mail_check(database, constitution, settings)
+
+    opportunity = service.get_opportunity(opportunity_id)
+    assert opportunity["response_status"] == "interview"
+
+
 def test_run_mail_check_alerts_on_graph_auth_expired(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

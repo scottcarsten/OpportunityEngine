@@ -8,9 +8,9 @@ The roadmap is directional rather than a promise of autonomous execution. Any ex
 
 ## Current status
 
-**Project phase:** v0.3 complete, v0.4's named hardening scope (all 3 slices) done  
+**Project phase:** v0.3 complete, v0.4's named hardening scope (all 3 slices) done, plus five bonus slices beyond either checklist  
 **Completed:** all of v0.1 (design baseline through the review inbox), all of v0.2 (application preparation) — master résumé import/versioning, tailored-résumé/cover-letter/fit-report generation, document approval states, and DOCX/PDF export — and all of v0.3 (controlled workflow and notifications) — opportunity aging/expiration, configurable `ntfy` push notifications, follow-up reminders, pipeline reporting, explicit approval receipts, and a design (not yet enabled) for future external integrations  
-**Next milestone:** v0.4's four named hardening angles (process resilience, operational visibility, data safety, security) are all shipped — remaining v0.4 checklist items are open backlog, not actively queued; next real thread is applied-response tracking
+**Next milestone:** v0.4's four named hardening angles (process resilience, operational visibility, data safety, security) are all shipped, and applied-response tracking (the next real thread after v0.4) is also done — remaining v0.4 checklist items are open backlog, not actively queued; no other thread is currently queued
 
 ## Definition of done
 
@@ -324,6 +324,17 @@ alerts on every new message since the inbox is dedicated, with a
 best-effort match to an applied opportunity that never gates the
 alert. Runs inside the same Telegram listener process as the other two
 background pieces above. See `OE-ADR-037`.
+
+**Bonus slice**: applied-response tracking — a real
+`response_status` (Responded, Interview, Offer, Declined, Withdrawn)
+per opportunity, independent of both `lifecycle_status` and
+`applied_at`, closing the deferral `OE-ADR-034` explicitly flagged for
+later. Folded into the existing dashboard status-chip filter; a
+matched Graph mail alert auto-sets it to Responded as a floor value,
+never overwriting a more specific status Scott set by hand. A real
+naming collision (`declined` vs. `lifecycle_status`'s existing
+`rejected`) was caught and fixed during implementation, not after
+shipping. See `OE-ADR-041`.
 
 Opportunity aging and stale-listing detection is v0.3's first slice.
 Digging into the schema before building anything found `expires_at`,

@@ -61,6 +61,13 @@ _REVIEW_DECISION_STATUS = {
     "reopen": "eligible",
 }
 
+# Per OE-ADR-041: what happened after applying, independent of both
+# lifecycle_status and applied_at - deferred by OE-ADR-034, built here.
+# "declined", not "rejected" - lifecycle_status's "rejected" already means
+# Scott rejected the opportunity; reusing that word here would collide in
+# list_opportunities' string-dispatched pseudo-status filter below.
+_RESPONSE_STATUS_VALUES = {"responded", "interview", "offer", "declined", "withdrawn"}
+
 
 class OpportunityService:
     """Provide the first complete manual opportunity workflow."""
@@ -371,6 +378,38 @@ class OpportunityService:
             )
             session.commit()
 
+    def set_response_status(self, opportunity_id: int, status: str | None) -> None:
+        """Record what happened after applying (OE-ADR-041) - independent
+        of both `lifecycle_status` and `applied_at`, same principle as
+        `mark_applied`. `status=None` clears it; any other value must be
+        one of `_RESPONSE_STATUS_VALUES`. One method for set-and-clear,
+        unlike `mark_applied`/`unmark_applied`'s split, since this is a
+        multi-value enum rather than a boolean toggle.
+        """
+        if status is not None and status not in _RESPONSE_STATUS_VALUES:
+            raise ValueError(f"invalid response_status: {status}")
+        with self.database.session() as session:
+            opportunity = session.execute(
+                select(Opportunity).where(Opportunity.id == opportunity_id)
+            ).scalar_one_or_none()
+            if opportunity is None:
+                raise ValueError(f"opportunity not found: {opportunity_id}")
+
+            previous_status = opportunity.response_status
+            opportunity.response_status = status
+            opportunity.updated_at = now_iso()
+            AuditService(session).record(
+                AuditEvent(
+                    event_type="opportunity_response_status_changed",
+                    actor_type="scott",
+                    entity_type="opportunity",
+                    entity_id=opportunity_id,
+                    constitution_version=self.constitution.version,
+                    summary=f"Response status: {previous_status} -> {status}.",
+                )
+            )
+            session.commit()
+
     def mark_notifications_sent(self, opportunity_id: int) -> None:
         """Mark this opportunity's queued notifications as sent (viewed)."""
         with self.database.session() as session:
@@ -525,6 +564,7 @@ class OpportunityService:
             Opportunity.created_at,
             Opportunity.remind_at,
             Opportunity.applied_at,
+            Opportunity.response_status,
         ).order_by(Opportunity.created_at.desc(), Opportunity.id.desc())
         if lifecycle_status == "follow_up_due":
             # Not a real lifecycle_status - a deferred opportunity whose
@@ -539,6 +579,9 @@ class OpportunityService:
             # design, so applying doesn't hide an opportunity's actual
             # stage (OE-ADR-034).
             query = query.where(Opportunity.applied_at.is_not(None))
+        elif lifecycle_status in _RESPONSE_STATUS_VALUES:
+            # Same pattern again for OE-ADR-041's response_status.
+            query = query.where(Opportunity.response_status == lifecycle_status)
         elif lifecycle_status is not None:
             query = query.where(Opportunity.lifecycle_status == lifecycle_status)
         if engagement_type is not None:

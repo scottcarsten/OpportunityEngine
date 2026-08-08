@@ -267,6 +267,23 @@ def unapply_from_opportunity(request: Request, opportunity_id: int) -> RedirectR
     return RedirectResponse(url=f"/opportunities/{opportunity_id}", status_code=303)
 
 
+@router.post("/opportunities/{opportunity_id}/response-status")
+async def set_opportunity_response_status(
+    request: Request, opportunity_id: int
+) -> RedirectResponse:
+    service = _service(request)
+    if service.get_opportunity(opportunity_id) is None:
+        raise HTTPException(status_code=404, detail="opportunity not found")
+
+    form = await request.form()
+    status = str(form.get("status", "")).strip() or None
+    try:
+        service.set_response_status(opportunity_id, status)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return RedirectResponse(url=f"/opportunities/{opportunity_id}", status_code=303)
+
+
 @router.post("/opportunities/{opportunity_id}/score")
 def score_opportunity(request: Request, opportunity_id: int) -> RedirectResponse:
     service = _service(request)

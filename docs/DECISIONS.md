@@ -2348,3 +2348,88 @@ Drive, nightly, 14-day retention.
   setup (unrelated to this slice's code, but relevant now that this
   machine holds more real credentials than before) — flagged to Scott
   directly; his call on timing to change it.
+
+## OE-ADR-041 — Applied-response tracking: a structured status per applied opportunity
+
+**Status:** Accepted
+**Date:** 2026-08-07
+
+### Context
+
+`OE-ADR-034` explicitly deferred this: *"Outcome/response tracking
+(interview scheduled, rejected, ghosted) remains explicitly deferred —
+a bigger, separate feature if wanted later, not silently bundled in
+here."* `applied_at` only records that and when Scott applied; nothing
+tracked what happened after. The Graph mail integration (`OE-ADR-037`)
+detects an employer reply and alerts on it, but nothing durable
+recorded the outcome on the opportunity itself.
+
+Scott confirmed: a real status field (Responded, Interview, Offer,
+[declined], Withdrawn - see naming note below - plus "no response yet"
+as the default), folded into the existing single-select status-chip
+filter, and a matched Graph mail alert should auto-set status to
+Responded as a floor value only, never overwriting something more
+specific Scott set by hand.
+
+### Decision
+
+- **New `opportunities.response_status`** (nullable, CHECK-constrained),
+  independent of both `lifecycle_status` and `applied_at` - same
+  principle `OE-ADR-034` established: no field should hide or replace
+  another axis of what stage something is actually at.
+- **Value is `declined`, not `rejected`.** A real naming collision was
+  caught during implementation: `lifecycle_status` already has
+  `rejected`, meaning *Scott* rejected the opportunity during triage.
+  `list_opportunities`'s pseudo-status filter dispatches on the raw
+  string value, so reusing `rejected` for "the employer rejected you"
+  would have silently broken the existing lifecycle "Rejected" filter
+  the moment both existed. Caught and fixed before it shipped, not
+  after.
+- **`OpportunityService.set_response_status(id, status)`** — one
+  method for both setting and clearing (`status=None`), unlike
+  `mark_applied`/`unmark_applied`'s two-method split, since this is a
+  multi-value enum rather than a boolean toggle. Raises on an
+  unrecognized value; audits every change
+  (`opportunity_response_status_changed`).
+- **Migration `0007` needed `batch_alter_table`**, unlike
+  `applied_at`/`remind_at`'s plain `op.add_column` — SQLite can't add a
+  CHECK constraint via bare `ALTER TABLE`. Confirmed no triggers exist
+  on `opportunities` (unlike `0003`'s `notifications.channel` change,
+  which had to drop/recreate one around its batch op). Live-verified
+  against a real copy of the production database: migration applied
+  cleanly, all 107 real rows preserved, `PRAGMA integrity_check` `ok`.
+- **Folded into the same status-chip row** as the existing
+  `follow_up_due`/`applied` pseudo-statuses, rather than a separate
+  filter control — Scott's choice; a response status implies
+  `applied_at` is already set, so filtering by e.g. "Interview" alone
+  already narrows correctly without needing a second, combinable axis.
+- **Auto-set as a floor value from a Graph mail match**
+  (`run_mail_check` in `backend/telegram_bot.py`): a matched alert with
+  a currently-unset `response_status` gets set to `"responded"`; an
+  already-set status (interview/offer/declined/withdrawn) is never
+  overwritten. `graph_mail.py` itself stays read-only/side-effect-free
+  on `opportunities`, consistent with `OE-ADR-037`'s framing — the
+  write lives in the orchestrator that already writes `Notification`
+  rows per alert. Wrapped in its own try/except so a failure here never
+  crashes mail alerting. Live-verified: a real `run_mail_check`
+  invocation against a scratch DB with a matched alert correctly set
+  `response_status` to `"responded"`.
+- **Detail-page UI**: the response-status dropdown only appears once
+  `applied_at` is set (UI-only gating, not enforced at the DB level —
+  same looseness `applied_at` itself has relative to
+  `lifecycle_status`).
+
+### Consequences
+
+- The dashboard can now show where every real application actually
+  stands, closing the deferral `OE-ADR-034` flagged.
+- The Graph mail auto-set means Scott doesn't have to manually flip a
+  status just because an employer replied — the "Responded" floor
+  happens automatically, while anything more specific (interview,
+  offer, declined, withdrawn) still requires his own judgment, matching
+  this project's consistent "automation observes and surfaces, Scott
+  decides" posture.
+- The `rejected`/`declined` naming collision is a reminder that adding
+  a second pseudo-status axis onto the same string-keyed filter
+  dispatch is not risk-free — worth checking for collisions again if a
+  third such axis is ever added.

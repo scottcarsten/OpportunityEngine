@@ -144,6 +144,7 @@ class Opportunity(Base):
     expires_at: Mapped[str | None] = mapped_column(Text)
     remind_at: Mapped[str | None] = mapped_column(Text)
     applied_at: Mapped[str | None] = mapped_column(Text)
+    response_status: Mapped[str | None] = mapped_column(Text)
     lifecycle_status: Mapped[str] = mapped_column(
         Text, nullable=False, server_default=text("'new'")
     )
@@ -194,6 +195,11 @@ class Opportunity(Base):
             name="ck_opportunities_lifecycle_status",
         ),
         CheckConstraint(
+            "response_status IS NULL OR response_status IN "
+            "('responded', 'interview', 'offer', 'declined', 'withdrawn')",
+            name="ck_opportunities_response_status",
+        ),
+        CheckConstraint(
             "compensation_min IS NULL OR compensation_max IS NULL "
             "OR compensation_min <= compensation_max",
             name="ck_opportunities_compensation_range",
@@ -207,6 +213,7 @@ class Opportunity(Base):
         Index("idx_opportunities_last_seen", "last_seen_at"),
         Index("idx_opportunities_status_remind", "lifecycle_status", "remind_at"),
         Index("idx_opportunities_applied_at", "applied_at"),
+        Index("idx_opportunities_response_status", "response_status"),
     )
 
 

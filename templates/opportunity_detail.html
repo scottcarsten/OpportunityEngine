@@ -79,6 +79,22 @@
           <span class="badge text-bg-primary ms-1">Applied</span>
         </dd>
         {% endif %}
+        {% if opportunity.response_status %}
+        <dt class="col-sm-4">Response</dt>
+        <dd class="col-sm-8">
+          {% if opportunity.response_status == "responded" %}
+            <span class="badge text-bg-info">Responded</span>
+          {% elif opportunity.response_status == "interview" %}
+            <span class="badge text-bg-primary">Interview</span>
+          {% elif opportunity.response_status == "offer" %}
+            <span class="badge text-bg-success">Offer</span>
+          {% elif opportunity.response_status == "declined" %}
+            <span class="badge text-bg-dark">Declined</span>
+          {% elif opportunity.response_status == "withdrawn" %}
+            <span class="badge text-bg-secondary">Withdrawn</span>
+          {% endif %}
+        </dd>
+        {% endif %}
         <dt class="col-sm-4">Source</dt>
         <dd class="col-sm-8">
           {% if opportunity.source %}
@@ -264,6 +280,27 @@
         <button type="submit" class="btn btn-sm btn-outline-secondary">
           Unmark applied
         </button>
+      </form>
+      <hr>
+      <p class="small text-secondary">
+        What happened after applying &mdash; also independent of the
+        status above, and of a Graph mail alert matching this
+        opportunity (which only nudges this to "Responded" if nothing's
+        set yet; it never overwrites a more specific status).
+      </p>
+      <form method="post" action="/opportunities/{{ opportunity.id }}/response-status" class="d-flex align-items-end gap-2">
+        <div>
+          <label class="form-label small" for="response-status">Response status</label>
+          <select class="form-select form-select-sm" id="response-status" name="status">
+            <option value="" {% if not opportunity.response_status %}selected{% endif %}>No response yet</option>
+            <option value="responded" {% if opportunity.response_status == "responded" %}selected{% endif %}>Responded</option>
+            <option value="interview" {% if opportunity.response_status == "interview" %}selected{% endif %}>Interview</option>
+            <option value="offer" {% if opportunity.response_status == "offer" %}selected{% endif %}>Offer</option>
+            <option value="declined" {% if opportunity.response_status == "declined" %}selected{% endif %}>Declined</option>
+            <option value="withdrawn" {% if opportunity.response_status == "withdrawn" %}selected{% endif %}>Withdrawn</option>
+          </select>
+        </div>
+        <button type="submit" class="btn btn-sm btn-outline-primary">Update response status</button>
       </form>
       {% else %}
       <form method="post" action="/opportunities/{{ opportunity.id }}/apply" class="d-flex align-items-end gap-2">

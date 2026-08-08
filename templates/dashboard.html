@@ -34,6 +34,11 @@
   ("expired", "Expired", "dark"),
   ("follow_up_due", "Follow-up due", "warning"),
   ("applied", "Applied", "primary"),
+  ("responded", "Responded", "info"),
+  ("interview", "Interview", "primary"),
+  ("offer", "Offer", "success"),
+  ("declined", "Declined", "dark"),
+  ("withdrawn", "Withdrawn", "secondary"),
 ] %}
 {% set engagement_chips = [
   ("contract", "Contract"),
@@ -147,6 +152,17 @@
           {% endif %}
           {% if opportunity.applied_at %}
             <span class="badge text-bg-primary ms-1">Applied</span>
+          {% endif %}
+          {% if opportunity.response_status == "responded" %}
+            <span class="badge text-bg-info ms-1">Responded</span>
+          {% elif opportunity.response_status == "interview" %}
+            <span class="badge text-bg-primary ms-1">Interview</span>
+          {% elif opportunity.response_status == "offer" %}
+            <span class="badge text-bg-success ms-1">Offer</span>
+          {% elif opportunity.response_status == "declined" %}
+            <span class="badge text-bg-dark ms-1">Declined</span>
+          {% elif opportunity.response_status == "withdrawn" %}
+            <span class="badge text-bg-secondary ms-1">Withdrawn</span>
           {% endif %}
         </td>
         <td class="text-end">

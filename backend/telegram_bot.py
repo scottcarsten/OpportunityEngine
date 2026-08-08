@@ -179,6 +179,7 @@ def run_mail_check(database: Database, constitution: Constitution, settings: Set
         if not sent:
             logger.warning("Failed to send mail-check-failure alert: %s", error)
 
+    opportunity_service = OpportunityService(database, constitution)
     for alert in alerts:
         sent, error = send_telegram(
             settings.telegram_bot_token, settings.telegram_chat_id, alert["text"]
@@ -199,6 +200,21 @@ def run_mail_check(database: Database, constitution: Constitution, settings: Set
                 )
             )
             session.commit()
+
+        if alert["opportunity_id"] is not None:
+            # A matched alert is real evidence of a response - nudge
+            # response_status to "responded" as a floor value (OE-ADR-041).
+            # Never overwrites a more specific status Scott already set by
+            # hand; never crashes mail alerting if it fails.
+            try:
+                opportunity = opportunity_service.get_opportunity(alert["opportunity_id"])
+                if opportunity and not opportunity.get("response_status"):
+                    opportunity_service.set_response_status(alert["opportunity_id"], "responded")
+            except Exception:
+                logger.exception(
+                    "Failed to auto-set response_status for opportunity %s",
+                    alert["opportunity_id"],
+                )
 
 
 def dispatch_command(
