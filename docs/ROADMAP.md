@@ -8,9 +8,9 @@ The roadmap is directional rather than a promise of autonomous execution. Any ex
 
 ## Current status
 
-**Project phase:** v0.3 complete, v0.4 slice 1 of 3 done  
+**Project phase:** v0.3 complete, v0.4's named hardening scope (all 3 slices) done  
 **Completed:** all of v0.1 (design baseline through the review inbox), all of v0.2 (application preparation) — master résumé import/versioning, tailored-résumé/cover-letter/fit-report generation, document approval states, and DOCX/PDF export — and all of v0.3 (controlled workflow and notifications) — opportunity aging/expiration, configurable `ntfy` push notifications, follow-up reminders, pipeline reporting, explicit approval receipts, and a design (not yet enabled) for future external integrations  
-**Next milestone:** v0.4 — deployment and hardening, in progress: systemd services + secrets permissions done, operational-visibility alerting and DB/token backups queued next
+**Next milestone:** v0.4's four named hardening angles (process resilience, operational visibility, data safety, security) are all shipped — remaining v0.4 checklist items are open backlog, not actively queued; next real thread is applied-response tracking
 
 ## Definition of done
 
@@ -371,8 +371,20 @@ always uses; Scott re-authenticates by hand with
 `python -m backend.graph_mail` if `GraphAuthExpiredError` ever alerts
 him. See `OE-ADR-039`.
 
-**Slice 3 (queued):** data safety — scheduled backups of the SQLite
-database and the Graph token cache/delta-link state.
+**Slice 3 (done):** data safety. `systemd/opportunity-engine-backup.timer`
+runs `scripts/backup.sh` nightly at 3am — a safe SQLite snapshot
+(`scripts/backup_db.py`, `sqlite3.Connection.backup()`, not a raw file
+copy, with a `PRAGMA integrity_check` before it's trusted) plus the
+Graph auth state, bundled into a dated tarball, kept 14 days both in
+`data/backups/` and off-disk on Google Drive via `rclone` (Scott's
+choice — same-disk backup alone survives a bad upgrade but not a dead
+drive). `.env` is deliberately excluded. Reuses `OE-ADR-039`'s alert
+unit directly for backup failures — no new alerting code. Live-verified:
+a real corrupted-DB backup attempt failed loudly, a real restore into a
+scratch directory was queried successfully, and a forced failure
+produced a real Telegram alert. See `OE-ADR-040`. **This completes all
+four hardening angles Scott named for v0.4** — remaining checklist items
+below stay as open backlog, not actively queued.
 
 - [ ] Add PostgreSQL migration support if scale requires it.
 - [ ] Add dependency scanning and secret scanning.

@@ -2263,3 +2263,88 @@ attempts the interactive flow.
   only repeated ones. That's a deliberate consistency choice, not
   accidental noise; if it proves too chatty in practice, debouncing can
   be added later.
+
+## OE-ADR-040 — Data safety: nightly backups to Google Drive via rclone
+
+**Status:** Accepted
+**Date:** 2026-08-07
+
+### Context
+
+The last of the four hardening angles Scott named for v0.4 (process
+resilience and operational visibility shipped in `OE-ADR-038`/`039`).
+The SQLite database (pipeline history, applied-opportunity tracking,
+notifications) and the Microsoft Graph auth state
+(`data/graph_token_cache.json`, `data/graph_delta_link.txt`) existed in
+exactly one copy, on one disk — a bad migration, a fat-fingered delete,
+or actual disk failure would lose real history and force Scott to redo
+the Graph device-code sign-in. Scott confirmed he wanted real off-disk
+protection, not just a same-disk backup folder (which survives a bad
+upgrade but not a dead drive) — via `rclone` to his existing Google
+Drive, nightly, 14-day retention.
+
+### Decision
+
+- **`rclone` to Google Drive (`gdrive:` remote, `scottcarsten@gmail.com`)**,
+  installed via `apt` (1.60.1, current enough for basic Drive
+  copy/delete). Configured interactively via `rclone config create
+  gdrive drive` and a browser OAuth flow — no Azure-style app
+  registration needed this time, since rclone ships its own client for
+  personal use. `~/.config/rclone/rclone.conf` holds the resulting
+  token and got the same `chmod 600` treatment as `.env`
+  (`OE-ADR-038`).
+- **`scripts/backup_db.py` uses stdlib `sqlite3.Connection.backup()`**,
+  not a raw file copy — safe against the WAL mode this project already
+  runs in, where a plain copy could grab an inconsistent mid-write
+  snapshot. Runs `PRAGMA integrity_check` against the result and exits
+  non-zero if it's not `ok`. Live-tested against a deliberately
+  corrupted copy of the real database: the corruption was severe
+  enough that `.backup()` itself raised rather than reaching the
+  integrity check — still a loud, non-zero-exit failure either way,
+  which is the actual property being verified.
+- **No dependency on the project's venv** — `backup_db.py` imports
+  nothing from `backend/` and runs under system `python3`;
+  `scripts/backup.sh` calls `rclone` and `tar` directly. Same reasoning
+  as `OE-ADR-039`'s curl-not-Python alert unit: a backup should still
+  work even if the app's own venv is broken.
+- **`.env` is deliberately excluded from the backup bundle.** Real API
+  keys/tokens don't belong in a Google Drive backup by default; Scott
+  already has those values from setup. The Graph token cache and
+  delta-link *are* included — losing those just means redoing the
+  device-code sign-in, not a security exposure, and OE-ADR-037 already
+  established `Mail.Read`-only scoping for that token regardless.
+- **14-day retention, enforced both locally and remotely** —
+  `find -mtime +14 -delete` on `data/backups/` (already covered by the
+  existing blanket `data/` gitignore rule) and `rclone delete
+  --min-age 14d` on the Drive folder.
+- **Nightly via a systemd timer**
+  (`systemd/opportunity-engine-backup.timer`, `OnCalendar=*-*-*
+  03:00:00`, `Persistent=true` so a missed run because the machine was
+  off fires on next boot) rather than cron — consistent with how this
+  project already schedules everything else (`OE-ADR-036`).
+- **Reuses `OE-ADR-039`'s alert unit directly** —
+  `opportunity-engine-backup.service` sets
+  `OnFailure=opportunity-engine-alert@%n.service`, no new alerting code
+  at all. Live-verified: a forced failure produced a real Telegram
+  alert through the exact same path as the crash-loop alerts.
+- **Restore is documented, not scripted**: stop both services, copy the
+  chosen backup's `.db` (and Graph state files, if needed) over the
+  live files, restart. Deliberately no `restore.sh` — this runs rarely
+  enough that a script would be speculative abstraction. Live-practiced
+  into a scratch directory: extracted a real backup tarball, queried
+  the restored database (107 real rows in `opportunities`), and
+  confirmed `PRAGMA integrity_check` returns `ok`.
+
+### Consequences
+
+- Real pipeline history and Graph auth state now survive disk failure,
+  not just accidental deletion or a bad upgrade.
+- All four hardening angles Scott named for v0.4 (process resilience,
+  operational visibility, data safety, security) are now covered.
+  Remaining items on the original v0.4 checklist (PostgreSQL migration,
+  dependency/secret scanning, performance tests, containerizing) stay
+  as open backlog, not actively queued.
+- A single-digit `sudo` password on this account was noticed during
+  setup (unrelated to this slice's code, but relevant now that this
+  machine holds more real credentials than before) — flagged to Scott
+  directly; his call on timing to change it.

@@ -207,3 +207,35 @@ and `journalctl --user -u opportunity-engine-telegram.service -f`. Both
 units read secrets from `.env` via `EnvironmentFile=`, so they never need
 editing when a token rotates — just update `.env` and
 `systemctl --user restart <unit>`.
+
+If a service crash-loops (5 failures within 10 minutes) or a nightly
+backup fails, `opportunity-engine-alert@.service` sends a Telegram
+alert via `curl` — deliberately independent of the app's own venv, so
+it still works if that's what's broken (`OE-ADR-039`).
+
+### Backups and restore
+
+`systemd/opportunity-engine-backup.timer` runs `scripts/backup.sh`
+nightly at 3am: a safe SQLite snapshot (`scripts/backup_db.py`, using
+`sqlite3.Connection.backup()`, not a raw file copy) plus the Graph auth
+state, bundled into a dated tarball, kept 14 days both in
+`data/backups/` and on Google Drive via `rclone` (`OE-ADR-040`).
+`.env` is deliberately excluded — real credentials don't belong in a
+cloud backup.
+
+One-time setup:
+
+```bash
+sudo apt install rclone
+rclone config create gdrive drive   # interactive browser sign-in
+chmod 600 ~/.config/rclone/rclone.conf
+cp systemd/opportunity-engine-backup.service systemd/opportunity-engine-backup.timer ~/.config/systemd/user/
+systemctl --user daemon-reload
+systemctl --user enable --now opportunity-engine-backup.timer
+```
+
+To restore: stop both services
+(`systemctl --user stop opportunity-engine-web.service opportunity-engine-telegram.service`),
+extract the chosen backup tarball, copy its `opportunity_engine.db`
+(and `graph_token_cache.json`/`graph_delta_link.txt` if needed) over
+the files in `data/`, then restart the services.

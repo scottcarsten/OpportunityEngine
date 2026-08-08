@@ -1,0 +1,8 @@
+[Unit]
+Description=OpportunityEngine nightly backup (DB + Graph auth state) to Google Drive
+OnFailure=opportunity-engine-alert@%n.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=%h/Documents/GitRepository/OpportunityEngine
+ExecStart=%h/Documents/GitRepository/OpportunityEngine/scripts/backup.sh
